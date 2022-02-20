@@ -68,6 +68,7 @@ class Client:
 
     def timeout(self):
         while(1):
+            self.curLeader == -1
             time.sleep(self.electionTimeout)
             if self.state == 1 and self.curLeader == -1:
                 self.term += 1
@@ -125,8 +126,16 @@ class Client:
             if data['op'] == APPEND:
                 print("{} received APPEND from {} with tag {}".format(
                     self.id, data['id'], data['data']))
-                if self.term < data['data']['term']:
-                        self.term = data['data']['term']
-                        self.state = 1 # follower
-                        self.curLeader = data['id']
+                if self.term > data['data']['term']:
+                    payload = {'id': self.id, 'op': RESPONDAPPEND, 'data': {
+                        'term': self.term, 'success': False}}
+                    self.socket.sendMessage(payload, clientIPs[data['id']])
+                else:
+                    self.term = data['data']['term']
+                    self.state = 1 # follower
+                    self.curLeader = data['id']
+                    self.resetTimeout()
+                    
+
+
 
