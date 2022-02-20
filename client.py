@@ -114,9 +114,9 @@ class Client:
             self.lastLogTerm = self.curTerm
         payload = {'id': self.id, 'op': APPEND,
                    'data': {'term': self.curTerm,
-                            'prevLogIndex': self.prevLogIndex, 
+                            'prevLogIndex': self.prevLogIndex,
                             'prevLogTerm': self.prevLogTerm,
-                            'entry': entry, 
+                            'entry': entry,
                             'commitIndex': self.commitIndex}}
         if entry != "":
             self.prevLogIndex = self.lastLogIndex
@@ -141,6 +141,7 @@ class Client:
                     self.votedFor = -1
                     self.curTerm = data['data']['term']
                     self.state = 1  # step down to FOLLOWER
+                    self.curLeader = -1
                 if self.curTerm == data['data']['term']:
                     if self.votedFor != -1 or self.lastLogTerm > data['data']['lastLogTerm'] or (self.lastLogTerm == data['data']['lastLogTerm'] and self.lastLogIndex > data['data']['lastLogIndex']):
                         payload = {'id': self.id, 'op': RESPONDELECTION,
@@ -162,6 +163,7 @@ class Client:
                     self.curTerm = data['data']['term']
                     self.state = 1  # follower
                     self.votedFor = -1
+                    self.curLeader = -1
                 if self.state == 2:
                     if data['data']['voteGranted']:
                         self.votesReceived.append(data['id'])
@@ -186,10 +188,9 @@ class Client:
                     if data['data']['entry'] != "":
                         if len(self.log) < data['data']['prevLogIndex'] or self.log[data['data']['prevLogIndex'] - 1]['term'] != data['data']['prevLogTerm']:
                             payload = {'id': self.id, 'op': RESPONDAPPEND,
-                               'data': {'term': self.curTerm, 'success': False}}
-                        
-                    
-            
+                                       'data': {'term': self.curTerm, 'success': False}}
+
+            # TODO:
             if data['op'] == RESPONDAPPEND:
                 print("{} received RESPONDAPPEND from {} with tag {}".format(
                     self.id, data['id'], data['data']))
@@ -198,31 +199,34 @@ class Client:
                     self.curTerm = data['data']['term']
                     self.state = 1  # follower
                     self.votedFor = -1
+                    self.curLeader = -1
                 if self.state == 3:
                     # When AppendEntries consistency check fails, decrement nextIndex and try again:
                     if not data['data']['success']:
                         self.nextIndex[data['id']] -= 1
 
-            
             if data['op'] == MESSAGE:
                 print("{} received MESSAGE from {} with tag {}".format(
                     self.id, data['id'], data['data']))
-                self.appendEntries(data['data']['entry'])
+                if self.state == 3:
+                    self.appendEntries(data['data']['entry'])
+                # TODO:
 
     def read(self):
         val = 0
         while(1):
-            while (val != 't' and val != 'c' and val != 's' and val !='d'):
-                val = input("May I help you? (t for transfer, c for check balance , s for snapshot, to view the snapshots: d): \n")
+            while (val != 't' and val != 'c' and val != 's' and val != 'd'):
+                val = input(
+                    "May I help you? (t for transfer, c for check balance , s for snapshot, to view the snapshots: d): \n")
             if val == 'w':
                 val = input()
-                #TODO: encrypt message
-                payload = {'id': self.id, 'op': MESSAGE, 'data':{'term':self.curTerm, 'entry': val}}
+                # TODO: encrypt message
+                payload = {'id': self.id, 'op': MESSAGE,
+                           'data': {'term': self.curTerm, 'entry': val}}
                 if self.curLeader == self.id:
                     self.appendEntries(val)
                 elif self.curLeader != -1:
                     self.socket.sendMessage(payload, clientIPs[self.curLeader])
                 else:
-                    #TODO: what if clients does not have leader info
+                    # TODO: what if clients does not have leader info
                     self.socket.sendMessage(payload, clientIPs[self.curLeader])
-            
