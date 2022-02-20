@@ -55,6 +55,8 @@ class Client:
         self.votesReceived = []
         self.log = []
         self.commitIndex = 0
+        self.messageSent = False
+        self.HeardFromLeader = False
 
     def broadcast(self, receiverGroupId, data):
         threads = []
@@ -73,42 +75,44 @@ class Client:
                             'lastLogTerm': self.lastLogTerm}}
         self.broadcast(self.receiverGroup, payload)
 
+    def startElection(self):
+        self.state = 2  # candidate
+        self.curTerm += 1
+        self.votedFor = self.id
+        self.votesReceived = [self.id]
+        self.resetTimeout()
+        self.requestVote()
+
     def timeout(self):
         while(1):
             if self.state == 1:
-                self.curLeader == -1
+                self.HeardFromLeader = False
                 time.sleep(self.electionTimeout)
-                if self.state == 1 and self.curLeader == -1:
-                    self.state = 2  # candidate
-                    self.curTerm += 1
-                    self.votedFor = self.id
-                    self.votesReceived = [self.id]
-                    self.resetTimeout()
-                    self.requestVote()
+                if self.state == 1 and not self.HeardFromLeader:
+                    self.startElection()
 
             if self.state == 2:
                 time.sleep(self.electionTimeout)
                 # Election timeout elapses without election resolution:
                 # increment term, start new election
-                if self.state == 2 and self.curLeader == -1:
-                    self.state = 2  # candidate
-                    self.curTerm += 1
-                    self.votedFor = self.id
-                    self.votesReceived = [self.id]
-                    self.resetTimeout()
-                    self.requestVote()
+                if self.state == 2 and not self.HeardFromLeader:
+                    self.startElection()
 
             # Send initial empty AppendEntries RPCs (heartbeat) to each
             # follower; repeat during idle periods to prevent election timeouts
             if self.state == 3:
-                self.appendEntries("")
+                if not self.messageSent:
+                    self.appendEntries("")
+                self.messageSent = False
                 time.sleep(self.heartbeatTimeout)
+
 
     def resetTimeout(self):
         self.electionTimeout = random.uniform(0.1, 0.5)
 
     def appendEntries(self, entry):
         if entry != "":
+            self.messageSent = True
             self.log.append({'term': self.term, 'message': entry})
             self.lastLogIndex += 1
             self.lastLogTerm = self.curTerm
@@ -183,6 +187,7 @@ class Client:
                     self.curTerm = data['data']['term']
                     self.state = 1  # follower
                     self.curLeader = data['id']
+                    self.HeardFromLeader = True
                     self.resetTimeout()
                     # TODO:
                     if data['data']['entry'] != "":
