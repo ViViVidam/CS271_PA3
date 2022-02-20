@@ -9,6 +9,7 @@ ELECTION = 1
 RESPONDELECTION = 2
 APPEND = 3
 RESPONDAPPEND = 4
+MESSAGE = 5
 
 clientGraph = [[0, 1, 1, 1, 1],
                [1, 0, 1, 1, 1],

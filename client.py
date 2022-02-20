@@ -1,6 +1,8 @@
 from pickle import TRUE
 import socket
 import json
+
+from zmq import REQ
 from header import *
 import time
 import threading
@@ -16,7 +18,7 @@ class UDPSocket:
         self.UDPsocket.bind(self.address)
 
     def sendMessage(self, message, ip):
-        time.sleep(3)
+        # time.sleep(3)
         msgByte = str.encode(json.dumps(message))
         self.UDPsocket.sendto(msgByte, ip)
 
@@ -39,16 +41,19 @@ class Client:
         self.mode = mode
         self.persistFile = PersistFile(id)
         self.lock = threading.Lock()
-        self.term = 0
+        self.curTerm = 0
         self.lastLogIndex = 0
         self.lastLogTerm = 0
+        self.prevLogIndex = 0
+        self.prevLogTerm = 0
         self.state = 1  # Follower
-        self.electionTimeout = random.randrange(100, 500)/1000
+        self.electionTimeout = random.uniform(0.1, 0.5)
         self.curLeader = -1
         self.votedFor = -1
         self.receiverGroup = [0, 1, 2, 3, 4]
         self.receiverGroup.remove(self.id)
         self.votesReceived = []
+        self.log = []
         self.commitIndex = 0
 
     def broadcast(self, receiverGroupId, data):
@@ -62,34 +67,68 @@ class Client:
             thread.join()
 
     def requestVote(self):
-        payload = {'id': self.id, 'op': ELECTION, 'data': {'term': self.term,
-                                                           'lastLogIndex': self.lastLogIndex, 'lastLogTerm': self.lastLogTerm}}
+        payload = {'id': self.id, 'op': ELECTION,
+                   'data': {'term': self.curTerm,
+                            'lastLogIndex': self.lastLogIndex,
+                            'lastLogTerm': self.lastLogTerm}}
         self.broadcast(self.receiverGroup, payload)
 
     def timeout(self):
         while(1):
-            self.curLeader == -1
-            time.sleep(self.electionTimeout)
-            if self.state == 1 and self.curLeader == -1:
-                self.term += 1
-                self.state = 2  # candidate
-                self.votedFor = self.id
-                self.votesReceived = [self.id]
-                self.resetTimeout()
-                self.requestVote()
+            if self.state == 1:
+                self.curLeader == -1
+                time.sleep(self.electionTimeout)
+                if self.state == 1 and self.curLeader == -1:
+                    self.state = 2  # candidate
+                    self.curTerm += 1
+                    self.votedFor = self.id
+                    self.votesReceived = [self.id]
+                    self.resetTimeout()
+                    self.requestVote()
+
+            if self.state == 2:
+                time.sleep(self.electionTimeout)
+                # Election timeout elapses without election resolution:
+                # increment term, start new election
+                if self.state == 2 and self.curLeader == -1:
+                    self.state = 2  # candidate
+                    self.curTerm += 1
+                    self.votedFor = self.id
+                    self.votesReceived = [self.id]
+                    self.resetTimeout()
+                    self.requestVote()
+
+            # Send initial empty AppendEntries RPCs (heartbeat) to each
+            # follower; repeat during idle periods to prevent election timeouts
+            if self.state == 3:
+                self.appendEntries("")
+                time.sleep(self.heartbeatTimeout)
 
     def resetTimeout(self):
-        self.electionTimeout = random.randrange(100, 500)/1000
-    
-    
-    def appendEntries(self, entry):
-        payload = {'id': self.id, 'op': APPEND, 'data': {'term': self.term,
-                                                           'lastLogIndex': self.lastLogIndex, 'lastLogTerm': self.lastLogTerm,
-                                                           'entry': entry, 'commitIndex': self.commitIndex}}
+        self.electionTimeout = random.uniform(0.1, 0.5)
 
-    def leader(self):
-        while(1):
-            self.appendEntries("")
+    def appendEntries(self, entry):
+        if entry != "":
+            self.log.append({'term': self.term, 'message': entry})
+            self.lastLogIndex += 1
+            self.lastLogTerm = self.curTerm
+        payload = {'id': self.id, 'op': APPEND,
+                   'data': {'term': self.curTerm,
+                            'prevLogIndex': self.prevLogIndex, 
+                            'prevLogTerm': self.prevLogTerm,
+                            'entry': entry, 
+                            'commitIndex': self.commitIndex}}
+        if entry != "":
+            self.prevLogIndex = self.lastLogIndex
+            self.prevLogTerm = self.term
+        self.broadcast(self.receiverGroup, payload)
+
+    def initializeLeader(self):
+        # Initialize nextIndex for each to last log index + 1
+        self.nextIndex = []
+        self.heartbeatTimeout = random.uniform(0.1, 0.5)
+        for i in CLIENTNUM:
+            self.nextIndex.append(self.lastLogIndex + 1)
 
     def listen(self):
         while(1):
@@ -97,45 +136,93 @@ class Client:
             if data['op'] == ELECTION:
                 print("{} received ELECTION from {} with tag {}".format(
                     self.id, data['id'], data['data']))
-                #TODO: check last log term and index
-                if self.term < data['data']['term']:
-                    self.votedFor = data['id']
-                    self.term = data['data']['term']
-                    self.state = 1  #step down to FOLLOWER
-                    payload = {'id': self.id, 'op': RESPONDELECTION,
-                               'data': {'term': self.term, 'voteGranted': True}}
+                # check last log term and index
+                if self.curTerm < data['data']['term']:
+                    self.votedFor = -1
+                    self.curTerm = data['data']['term']
+                    self.state = 1  # step down to FOLLOWER
+                if self.curTerm == data['data']['term']:
+                    if self.votedFor != -1 or self.lastLogTerm > data['data']['lastLogTerm'] or (self.lastLogTerm == data['data']['lastLogTerm'] and self.lastLogIndex > data['data']['lastLogIndex']):
+                        payload = {'id': self.id, 'op': RESPONDELECTION,
+                                   'data': {'term': self.curTerm, 'voteGranted': False}}
+                    else:
+                        self.votedFor = data['id']
+                        payload = {'id': self.id, 'op': RESPONDELECTION,
+                                   'data': {'term': self.curTerm, 'voteGranted': True}}
                     self.socket.sendMessage(payload, clientIPs[data['id']])
                 else:
                     payload = {'id': self.id, 'op': RESPONDELECTION, 'data': {
-                        'term': self.term, 'voteGranted': False}}
+                        'term': self.curTerm, 'voteGranted': False}}
                     self.socket.sendMessage(payload, clientIPs[data['id']])
 
             if data['op'] == RESPONDELECTION:
                 print("{} received RESPONDELECTION from {} with tag {}".format(
                     self.id, data['id'], data['data']))
-                if self.term < data['data']['term']:
-                        self.term = data['data']['term']
-                        self.state = 1 # follower
-                        self.votedFor = -1
+                if self.curTerm < data['data']['term']:
+                    self.curTerm = data['data']['term']
+                    self.state = 1  # follower
+                    self.votedFor = -1
                 if self.state == 2:
                     if data['data']['voteGranted']:
                         self.votesReceived.append(data['id'])
                         if len(self.votesReceived) > (len(self.receiverGroup)+1)/2:
-                            self.state = 3 # leader
-            
+                            self.curLeader = self.id
+                            self.state = 3  # leader
+                            self.initializeLeader()
+
             if data['op'] == APPEND:
                 print("{} received APPEND from {} with tag {}".format(
                     self.id, data['id'], data['data']))
-                if self.term > data['data']['term']:
-                    payload = {'id': self.id, 'op': RESPONDAPPEND, 'data': {
-                        'term': self.term, 'success': False}}
+                if self.curTerm > data['data']['term']:
+                    payload = {'id': self.id, 'op': RESPONDAPPEND,
+                               'data': {'term': self.curTerm, 'success': False}}
                     self.socket.sendMessage(payload, clientIPs[data['id']])
                 else:
-                    self.term = data['data']['term']
-                    self.state = 1 # follower
+                    self.curTerm = data['data']['term']
+                    self.state = 1  # follower
                     self.curLeader = data['id']
                     self.resetTimeout()
+                    # TODO:
+                    if data['data']['entry'] != "":
+                        if len(self.log) < data['data']['prevLogIndex'] or self.log[data['data']['prevLogIndex'] - 1]['term'] != data['data']['prevLogTerm']:
+                            payload = {'id': self.id, 'op': RESPONDAPPEND,
+                               'data': {'term': self.curTerm, 'success': False}}
+                        
                     
+            
+            if data['op'] == RESPONDAPPEND:
+                print("{} received RESPONDAPPEND from {} with tag {}".format(
+                    self.id, data['id'], data['data']))
+                # step down to follower
+                if self.curTerm < data['data']['term']:
+                    self.curTerm = data['data']['term']
+                    self.state = 1  # follower
+                    self.votedFor = -1
+                if self.state == 3:
+                    # When AppendEntries consistency check fails, decrement nextIndex and try again:
+                    if not data['data']['success']:
+                        self.nextIndex[data['id']] -= 1
 
+            
+            if data['op'] == MESSAGE:
+                print("{} received MESSAGE from {} with tag {}".format(
+                    self.id, data['id'], data['data']))
+                self.appendEntries(data['data']['entry'])
 
-
+    def read(self):
+        val = 0
+        while(1):
+            while (val != 't' and val != 'c' and val != 's' and val !='d'):
+                val = input("May I help you? (t for transfer, c for check balance , s for snapshot, to view the snapshots: d): \n")
+            if val == 'w':
+                val = input()
+                #TODO: encrypt message
+                payload = {'id': self.id, 'op': MESSAGE, 'data':{'term':self.curTerm, 'entry': val}}
+                if self.curLeader == self.id:
+                    self.appendEntries(val)
+                elif self.curLeader != -1:
+                    self.socket.sendMessage(payload, clientIPs[self.curLeader])
+                else:
+                    #TODO: what if clients does not have leader info
+                    self.socket.sendMessage(payload, clientIPs[self.curLeader])
+            
