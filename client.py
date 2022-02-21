@@ -47,7 +47,7 @@ class Client:
         self.prevLogIndex = 0
         self.prevLogTerm = 0
         self.state = 1  # Follower
-        self.electionTimeout = random.randint(5,20)
+        self.electionTimeout = random.randint(10,20)
         self.curLeader = -1
         self.votedFor = -1
         self.receiverGroup = [0, 1, 2, 3, 4]
@@ -106,15 +106,17 @@ class Client:
                     self.appendEntries("")
                 self.messageSent = False
                 time.sleep(self.heartbeatTimeout)
+            
+            print(self.log)
 
 
     def resetTimeout(self):
-        self.electionTimeout = random.randint(5, 20)
+        self.electionTimeout = random.randint(10, 20)
 
     def appendEntries(self, entry):
         if entry != "":
             self.messageSent = True
-            self.log.append({'term': self.term, 'message': entry})
+            self.log.append({'term': self.curTerm, 'message': entry})
             self.lastLogIndex += 1
             self.lastLogTerm = self.curTerm
         payload = {'id': self.id, 'op': APPEND,
@@ -125,13 +127,14 @@ class Client:
                             'commitIndex': self.commitIndex}}
         if entry != "":
             self.prevLogIndex = self.lastLogIndex
-            self.prevLogTerm = self.term
+            self.prevLogTerm = self.curTerm
         self.broadcast(self.receiverGroup, payload)
 
     def initializeLeader(self):
         # Initialize nextIndex for each to last log index + 1
         self.nextIndex = []
-        self.heartbeatTimeout = random.randint(5, 20)
+        self.heartbeatTimeout = random.randint(8, 10)
+        self.messageSent = False
         for i in range(CLIENTNUM):
             self.nextIndex.append(self.lastLogIndex + 1)
 
@@ -205,6 +208,8 @@ class Client:
                                        'data': {'term': self.curTerm, 'success': False}}
                         else:
                             self.log.append({'term': self.curTerm, 'message': data['data']['entry']})
+                            self.lastLogIndex += 1
+                            self.lastLogTerm = self.curTerm
                             payload = {'id': self.id, 'op': RESPONDAPPEND,
                                        'data': {'term': self.curTerm, 'success': True}}
                         self.socket.sendMessage(payload, clientIPs[data['id']])
@@ -250,9 +255,9 @@ class Client:
     def read(self):
         val = 0
         while(1):
-            while (val != 't' and val != 'c' and val != 's' and val != 'd'):
+            while (val != 'w' and val != 'c' and val != 's' and val != 'd'):
                 val = input(
-                    "May I help you? (t for transfer, c for check balance , s for snapshot, to view the snapshots: d): \n")
+                    "May I help you? (w for writing, c for check balance , s for snapshot, to view the snapshots: d): \n")
             if val == 'w':
                 val = input()
                 # TODO: encrypt message
