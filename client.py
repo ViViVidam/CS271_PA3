@@ -226,7 +226,7 @@ class Client:
                     self.state = 1  # follower
                     self.votedFor = -1
                     self.curLeader = -1
-                    
+
                 if self.state == 2:
                     if data['data']['voteGranted']:
                         self.peers[data['id']]['vote granted'] = True
@@ -338,8 +338,8 @@ class Client:
                 elif self.curLeader != -1:
                     self.socket.sendMessage(data, clientIPs[self.curLeader])
                 else:
-                    # TODO: what if clients does not have leader info
-                    self.socket.sendMessage(data, clientIPs[self.curLeader])
+                    # TODO: what if clients does not have leader info (random send?)
+                    self.socket.sendMessage(data, clientIPs[(self.id+1)%5])
 
     def read(self):
         val = 0
@@ -360,7 +360,7 @@ class Client:
                     self.socket.sendMessage(payload, clientIPs[self.curLeader])
                 else:
                     # TODO: what if clients does not have leader info
-                    self.socket.sendMessage(payload, clientIPs[self.curLeader])
+                    self.socket.sendMessage(payload, clientIPs[(self.id+1)%5])
 
     def run(self):
         # threading.Thread(target=monitor).start()
