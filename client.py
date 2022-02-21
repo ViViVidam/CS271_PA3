@@ -346,9 +346,9 @@ class Client:
         while(1):
             while (val != 'w' and val != 'c' and val != 's' and val != 'd'):
                 val = input(
-                    "May I help you? (w for writing, c for check balance , s for snapshot, to view the snapshots: d): \n")
+                    "May I help you? (w for writing): \n")
             if val == 'w':
-                val = input()
+                val = input("message:")
                 # TODO: encrypt message
                 payload = {'id': self.id, 'op': MESSAGE,
                            'data': {'term': self.curTerm, 'entry': val}}
