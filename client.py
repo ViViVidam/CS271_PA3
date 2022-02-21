@@ -18,7 +18,7 @@ class UDPSocket:
         self.UDPsocket.bind(self.address)
 
     def sendMessage(self, message, ip):
-        time.sleep(3)
+        # time.sleep(1)
         msgByte = str.encode(json.dumps(message))
         self.UDPsocket.sendto(msgByte, ip)
 
@@ -47,7 +47,7 @@ class Client:
         self.prevLogIndex = 0
         self.prevLogTerm = 0
         self.state = 1  # Follower
-        self.electionTimeout = random.randint(10,20)
+        self.electionTimeout = random.randint(5,20)
         self.curLeader = -1
         self.votedFor = -1
         self.receiverGroup = [0, 1, 2, 3, 4]
@@ -57,6 +57,7 @@ class Client:
         self.commitIndex = 0
         self.messageSent = False
         self.HeardFromLeader = False
+        print("***TERM {}***".format(self.curTerm))
 
     def broadcast(self, receiverGroupId, data):
         threads = []
@@ -108,7 +109,7 @@ class Client:
 
 
     def resetTimeout(self):
-        self.electionTimeout = random.randint(10, 20)
+        self.electionTimeout = random.randint(5, 20)
 
     def appendEntries(self, entry):
         if entry != "":
@@ -130,7 +131,7 @@ class Client:
     def initializeLeader(self):
         # Initialize nextIndex for each to last log index + 1
         self.nextIndex = []
-        self.heartbeatTimeout = random.randint(10, 20)
+        self.heartbeatTimeout = random.randint(5, 20)
         for i in range(CLIENTNUM):
             self.nextIndex.append(self.lastLogIndex + 1)
 
@@ -144,6 +145,7 @@ class Client:
                 if self.curTerm < data['data']['term']:
                     self.votedFor = -1
                     self.curTerm = data['data']['term']
+                    print("***TERM {}***".format(self.curTerm))
                     self.state = 1  # step down to FOLLOWER
                     self.curLeader = -1
                 if self.curTerm == data['data']['term']:
@@ -165,6 +167,7 @@ class Client:
                     self.id, data['id'], data['data']))
                 if self.curTerm < data['data']['term']:
                     self.curTerm = data['data']['term']
+                    print("***TERM {}***".format(self.curTerm))
                     self.state = 1  # follower
                     self.votedFor = -1
                     self.curLeader = -1
@@ -184,7 +187,9 @@ class Client:
                                'data': {'term': self.curTerm, 'success': False}}
                     self.socket.sendMessage(payload, clientIPs[data['id']])
                 else:
-                    self.curTerm = data['data']['term']
+                    if self.curTerm < data['data']['term']:        
+                        self.curTerm = data['data']['term']
+                        print("***TERM {}***".format(self.curTerm))
                     self.state = 1  # follower
                     self.curLeader = data['id']
                     self.HeardFromLeader = True
@@ -211,6 +216,7 @@ class Client:
                 # step down to follower
                 if self.curTerm < data['data']['term']:
                     self.curTerm = data['data']['term']
+                    print("***TERM {}***".format(self.curTerm))
                     self.state = 1  # follower
                     self.votedFor = -1
                     self.curLeader = -1
