@@ -191,9 +191,18 @@ class Client:
                     self.resetTimeout()
                     # TODO:
                     if data['data']['entry'] != "":
-                        if len(self.log) < data['data']['prevLogIndex'] or self.log[data['data']['prevLogIndex'] - 1]['term'] != data['data']['prevLogTerm']:
+                        if len(self.log) < data['data']['prevLogIndex'] or (data['data']['prevLogIndex'] != 0 and self.log[data['data']['prevLogIndex'] - 1]['term'] != data['data']['prevLogTerm']):
+                            while len(self.log) >= data['data']['prevLogIndex']:
+                                self.log.pop()
+                            self.lastLogIndex = len(self.log)
+                            self.lastLogTerm = self.log[-1]['term']
                             payload = {'id': self.id, 'op': RESPONDAPPEND,
                                        'data': {'term': self.curTerm, 'success': False}}
+                        else:
+                            self.log.append({'term': self.curTerm, 'message': data['data']['entry']})
+                            payload = {'id': self.id, 'op': RESPONDAPPEND,
+                                       'data': {'term': self.curTerm, 'success': True}}
+                        self.socket.sendMessage(payload, clientIPs[data['id']])
 
             # TODO:
             if data['op'] == RESPONDAPPEND:
@@ -209,13 +218,28 @@ class Client:
                     # When AppendEntries consistency check fails, decrement nextIndex and try again:
                     if not data['data']['success']:
                         self.nextIndex[data['id']] -= 1
+                        payload = {'id': self.id, 'op': APPEND,
+                                    'data': {'term': self.curTerm,
+                                            'prevLogIndex': self.nextIndex[data['id']] - 1,
+                                            'prevLogTerm': self.log[self.nextIndex[data['id']] - 2]['term'],
+                                            'entry': self.log[self.nextIndex[data['id']] - 2]['message'],
+                                            'commitIndex': self.commitIndex}}
+                        self.socket.sendMessage(payload, clientIPs[data['id']])
+                    else:
+                        #TODO: majority success, then commit
+                        return
 
             if data['op'] == MESSAGE:
                 print("{} received MESSAGE from {} with tag {}".format(
                     self.id, data['id'], data['data']))
                 if self.state == 3:
                     self.appendEntries(data['data']['entry'])
-                # TODO:
+                # resend to leader
+                elif self.curLeader != -1:
+                    self.socket.sendMessage(data, clientIPs[self.curLeader])
+                else:
+                    # TODO: what if clients does not have leader info
+                    self.socket.sendMessage(data, clientIPs[self.curLeader])
 
     def read(self):
         val = 0
@@ -235,3 +259,24 @@ class Client:
                 else:
                     # TODO: what if clients does not have leader info
                     self.socket.sendMessage(payload, clientIPs[self.curLeader])
+    
+    def run(self):
+        #threading.Thread(target=monitor).start()
+        listenThread = threading.Thread(target=self.listen)
+        if self.mode == TEST:
+            sendThread = threading.Thread(target=self.test)
+        else:
+            sendThread = threading.Thread(target=self.read)
+        listenThread.start()
+        time.sleep(1)
+        sendThread.start()
+        listenThread.join()
+        sendThread.join()
+
+
+if __name__ == '__main__':
+    client = Client(int(sys.argv[1]), NORMAL)
+    print("{} client started\nlistening...".format(client.id))
+    client.run()
+
+
