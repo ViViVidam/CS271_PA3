@@ -1,7 +1,7 @@
 from pickle import TRUE
 import socket
 import json
-
+import sys
 from zmq import REQ
 from header import *
 import time
@@ -18,7 +18,7 @@ class UDPSocket:
         self.UDPsocket.bind(self.address)
 
     def sendMessage(self, message, ip):
-        # time.sleep(3)
+        time.sleep(3)
         msgByte = str.encode(json.dumps(message))
         self.UDPsocket.sendto(msgByte, ip)
 
@@ -47,7 +47,7 @@ class Client:
         self.prevLogIndex = 0
         self.prevLogTerm = 0
         self.state = 1  # Follower
-        self.electionTimeout = random.uniform(0.1, 0.5)
+        self.electionTimeout = random.randint(10,20)
         self.curLeader = -1
         self.votedFor = -1
         self.receiverGroup = [0, 1, 2, 3, 4]
@@ -108,7 +108,7 @@ class Client:
 
 
     def resetTimeout(self):
-        self.electionTimeout = random.uniform(0.1, 0.5)
+        self.electionTimeout = random.randint(10, 20)
 
     def appendEntries(self, entry):
         if entry != "":
@@ -130,8 +130,8 @@ class Client:
     def initializeLeader(self):
         # Initialize nextIndex for each to last log index + 1
         self.nextIndex = []
-        self.heartbeatTimeout = random.uniform(0.1, 0.5)
-        for i in CLIENTNUM:
+        self.heartbeatTimeout = random.randint(10, 20)
+        for i in range(CLIENTNUM):
             self.nextIndex.append(self.lastLogIndex + 1)
 
     def listen(self):
@@ -263,15 +263,19 @@ class Client:
     def run(self):
         #threading.Thread(target=monitor).start()
         listenThread = threading.Thread(target=self.listen)
-        if self.mode == TEST:
-            sendThread = threading.Thread(target=self.test)
+        timeoutThread = threading.Thread(target = self.timeout)
+        if self.mode == NORMAL:
+            sendThread = threading.Thread(target=self.read)
         else:
             sendThread = threading.Thread(target=self.read)
         listenThread.start()
         time.sleep(1)
         sendThread.start()
+        time.sleep(1)
+        timeoutThread.start()
         listenThread.join()
         sendThread.join()
+        timeoutThread.join()
 
 
 if __name__ == '__main__':

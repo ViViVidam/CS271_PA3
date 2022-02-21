@@ -11,6 +11,8 @@ APPEND = 3
 RESPONDAPPEND = 4
 MESSAGE = 5
 
+NORMAL = 1
+
 clientGraph = [[0, 1, 1, 1, 1],
                [1, 0, 1, 1, 1],
                [1, 1, 0, 1, 1],
