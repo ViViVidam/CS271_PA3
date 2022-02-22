@@ -125,9 +125,10 @@ class Client:
                 # self.messageSent = False
                 self.heartbeat()
                 time.sleep(self.heartbeatTimeout)
-                print("****peers status:\n")
+                print("****peers status:")
                 print(self.peers)
 
+            print("***log:")
             print(self.log)
 
     # TODO: 感觉reset之后要打断time thread重新开始？找不到restart thread的办法
@@ -210,11 +211,13 @@ class Client:
                         self.votedFor = data['id']
                         payload = {'id': self.id, 'op': RESPONDELECTION,
                                    'data': {'term': self.curTerm, 'voteGranted': True}}
-                    self.socket.sendMessage(payload, clientIPs[data['id']])
+                    if clientGraph[self.id][data['id']]:
+                        self.socket.sendMessage(payload, clientIPs[data['id']])
                 else:
                     payload = {'id': self.id, 'op': RESPONDELECTION, 'data': {
                         'term': self.curTerm, 'voteGranted': False}}
-                    self.socket.sendMessage(payload, clientIPs[data['id']])
+                    if clientGraph[self.id][data['id']]:
+                        self.socket.sendMessage(payload, clientIPs[data['id']])
 
             if data['op'] == RESPONDELECTION:
                 print("{} received RESPONDELECTION from {} with tag {}".format(
@@ -243,7 +246,8 @@ class Client:
                 if self.curTerm > data['data']['term']:
                     payload = {'id': self.id, 'op': RESPONDAPPEND,
                                'data': {'term': self.curTerm, 'success': False}}
-                    self.socket.sendMessage(payload, clientIPs[data['id']])
+                    if clientGraph[self.id][data['id']]:
+                        self.socket.sendMessage(payload, clientIPs[data['id']])
                 else:
                     if self.curTerm < data['data']['term']:
                         self.curTerm = data['data']['term']
@@ -278,24 +282,8 @@ class Client:
                             self.lastLogTerm = self.log[-1]['term']
                         payload = {'id': self.id, 'op': RESPONDAPPEND,
                                     'data': {'term': self.curTerm, 'match index': self.lastLogIndex, 'success': True}}
-                    self.socket.sendMessage(payload, clientIPs[data['id']])
-                    # if data['data']['entry'] != "":
-                    #     if len(self.log) < data['data']['prevLogIndex'] or (data['data']['prevLogIndex'] != 0 and self.log[data['data']['prevLogIndex'] - 1]['term'] != data['data']['prevLogTerm']):
-                    #         while len(self.log) >= data['data']['prevLogIndex'] and len(self.log) > 0:
-                    #             self.log.pop()
-                    #         self.lastLogIndex = len(self.log)
-                    #         self.lastLogTerm = self.log[-1]['term']
-                    #         payload = {'id': self.id, 'op': RESPONDAPPEND,
-                    #                    'data': {'term': self.curTerm, 'match index': 0, 'success': False}}
-                    #     else:
-                    #         while len(self.log) >= data['data']['prevLogIndex'] and len(self.log) > 0:
-                    #             self.log.pop()
-                    #         self.log.append(data['data']['entry'])
-                    #         self.lastLogIndex = len(self.log)
-                    #         self.lastLogTerm = self.log[-1]['term']
-                    #         payload = {'id': self.id, 'op': RESPONDAPPEND,
-                    #                    'data': {'term': self.curTerm, 'match index': self.lastLogIndex, 'success': True}}
-                    #     self.socket.sendMessage(payload, clientIPs[data['id']])
+                    if clientGraph[self.id][data['id']]:
+                        self.socket.sendMessage(payload, clientIPs[data['id']])
 
             # TODO:
             if data['op'] == RESPONDAPPEND:
@@ -311,12 +299,12 @@ class Client:
                 if self.state == 3:
                     # When AppendEntries consistency check fails, decrement nextIndex and try again in next heartbeat:
                     if not data['data']['success']:
-                        #self.nextIndex[data['id']] -= 1
+                        # self.nextIndex[data['id']] -= 1
                         self.peers[data['id']]['next index'] -= 1
                     else:
                         self.peers[data['id']]['match index'] = data['data']['match index']
                         self.peers[data['id']]['next index'] = data['data']['match index'] + 1
-                        # TODO: majority success, then commit
+                        # TODO: majority success, then commit 在这里好像没啥影响
                         
 
             if data['op'] == MESSAGE:
@@ -336,17 +324,21 @@ class Client:
                     self.lastLogTerm = self.log[-1]['term']
                 # resend to leader
                 elif self.curLeader != -1:
-                    self.socket.sendMessage(data, clientIPs[self.curLeader])
+                    if clientGraph[self.id][self.curLeader]:
+                        self.socket.sendMessage(data, clientIPs[self.curLeader])
                 else:
-                    # TODO: what if clients does not have leader info (random send?)
-                    self.socket.sendMessage(data, clientIPs[(self.id+1)%5])
+                    # TODO: what if clients does not have leader info (random send currently)
+                    for key in self.peers:
+                        if clientGraph[self.id][key]:
+                            self.socket.sendMessage(data, clientIPs[key])
+                            break
 
     def read(self):
         val = 0
         while(1):
-            while (val != 'w' and val != 'c' and val != 's' and val != 'd'):
+            while (val != 'w' and val != 'fail' and val != 'fix' and val != 'd'):
                 val = input(
-                    "May I help you? (w for writing): \n")
+                    "May I help you? (w for writing, fai, fix): \n")
             if val == 'w':
                 val = input("message:")
                 # TODO: encrypt message
@@ -357,10 +349,38 @@ class Client:
                     self.lastLogIndex += 1
                     self.lastLogTerm = self.log[-1]['term']
                 elif self.curLeader != -1:
-                    self.socket.sendMessage(payload, clientIPs[self.curLeader])
+                    if clientGraph[self.id][self.curLeader]:
+                        self.socket.sendMessage(payload, clientIPs[self.curLeader])
                 else:
-                    # TODO: what if clients does not have leader info
-                    self.socket.sendMessage(payload, clientIPs[(self.id+1)%5])
+                    # TODO: what if clients does not have leader info, 感觉这样ok
+                    for key in self.peers:
+                        if clientGraph[self.id][key]:
+                            self.socket.sendMessage(payload, clientIPs[key])
+                            break
+            # TODO: group related operations
+            elif val == 'g':
+                val = input("group id")
+            
+            # TODO: 存文件里？
+            elif val == 'fail':
+                val = input("2 link ids:")
+                val_1 = int(val.split()[0])
+                val_2 = int(val.split()[1])
+                if val_1 >= 0 and val_1 < CLIENTNUM and val_2 >= 0 and val_2 < CLIENTNUM:
+                    clientGraph[val_2][val_1] = 0
+                    clientGraph[val_1][val_2] = 0
+            
+            # TODO:
+            elif val == 'fix':
+                val = input("2 link ids:")
+                val_1 = int(val.split()[0])
+                val_2 = int(val.split()[1])
+                if val_1 >= 0 and val_1 < CLIENTNUM and val_2 >= 0 and val_2 < CLIENTNUM:
+                    clientGraph[val_2][val_1] = 1
+                    clientGraph[val_1][val_2] = 1
+
+                
+
 
     def run(self):
         # threading.Thread(target=monitor).start()
