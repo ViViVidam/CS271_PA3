@@ -89,7 +89,7 @@ class Client:
         for i in range(CLIENTNUM):
             if i != self.id:
                 self.peers[i] = {'next index': 1,
-                                 'match index': 0, 
+                                 'match index': 0,
                                  'vote granted': False}
 
     def startElection(self):
@@ -149,15 +149,15 @@ class Client:
 
                 if self.peers[i]["next index"]-2 >= 0:
                     term = self.log[self.peers[i]["next index"]-2]['term']
-                else :
+                else:
                     term = 0
 
                 payload = {'id': self.id, 'op': APPEND,
-                   'data': {'term': self.curTerm,
-                            'prevLogIndex': self.peers[i]["next index"] - 1,
-                            'prevLogTerm': term,
-                            'entry': entry,
-                            'commitIndex': self.commitIndex}}
+                           'data': {'term': self.curTerm,
+                                    'prevLogIndex': self.peers[i]["next index"] - 1,
+                                    'prevLogTerm': term,
+                                    'entry': entry,
+                                    'commitIndex': self.commitIndex}}
                 threads.append(threading.Thread(
                     target=self.socket.sendMessage, args=(payload, clientIPs[i])))
 
@@ -261,7 +261,7 @@ class Client:
                         # delete log after prevLogIndex and the unmatch log at prevLogIndex
                         while len(self.log) >= data['data']['prevLogIndex'] and len(self.log) > 0:
                             self.log.pop()
-                    
+
                         # update lastLogIndex and lastLogIndex
                         self.lastLogIndex = len(self.log)
                         if len(self.log) > 0:
@@ -270,7 +270,7 @@ class Client:
                             self.lastLogTerm = 0
 
                         payload = {'id': self.id, 'op': RESPONDAPPEND,
-                                    'data': {'term': self.curTerm, 'match index': 0, 'success': False}}
+                                   'data': {'term': self.curTerm, 'match index': 0, 'success': False}}
                     # else: match at prevLogIndex
                     else:
                         # delete log after prevLogIndex, log at prevLogIndex match, so we do not delete it
@@ -281,7 +281,7 @@ class Client:
                             self.lastLogIndex = len(self.log)
                             self.lastLogTerm = self.log[-1]['term']
                         payload = {'id': self.id, 'op': RESPONDAPPEND,
-                                    'data': {'term': self.curTerm, 'match index': self.lastLogIndex, 'success': True}}
+                                   'data': {'term': self.curTerm, 'match index': self.lastLogIndex, 'success': True}}
                     if clientGraph[self.id][data['id']]:
                         self.socket.sendMessage(payload, clientIPs[data['id']])
 
@@ -302,10 +302,11 @@ class Client:
                         # self.nextIndex[data['id']] -= 1
                         self.peers[data['id']]['next index'] -= 1
                     else:
-                        self.peers[data['id']]['match index'] = data['data']['match index']
-                        self.peers[data['id']]['next index'] = data['data']['match index'] + 1
+                        self.peers[data['id']
+                                   ]['match index'] = data['data']['match index']
+                        self.peers[data['id']
+                                   ]['next index'] = data['data']['match index'] + 1
                         # TODO: majority success, then commit 在这里好像没啥影响
-                        
 
             if data['op'] == MESSAGE:
                 print("{} received MESSAGE from {} with tag {}".format(
@@ -319,13 +320,15 @@ class Client:
                     self.curLeader = -1
 
                 if self.state == 3:
-                    self.log.append({'term': self.curTerm, 'message': data['data']['entry']})
+                    self.log.append(
+                        {'term': self.curTerm, 'message': data['data']['entry']})
                     self.lastLogIndex += 1
                     self.lastLogTerm = self.log[-1]['term']
                 # resend to leader
                 elif self.curLeader != -1:
                     if clientGraph[self.id][self.curLeader]:
-                        self.socket.sendMessage(data, clientIPs[self.curLeader])
+                        self.socket.sendMessage(
+                            data, clientIPs[self.curLeader])
                 else:
                     # TODO: what if clients does not have leader info (random send currently)
                     for key in self.peers:
@@ -350,7 +353,8 @@ class Client:
                     self.lastLogTerm = self.log[-1]['term']
                 elif self.curLeader != -1:
                     if clientGraph[self.id][self.curLeader]:
-                        self.socket.sendMessage(payload, clientIPs[self.curLeader])
+                        self.socket.sendMessage(
+                            payload, clientIPs[self.curLeader])
                 else:
                     # TODO: what if clients does not have leader info, 感觉这样ok
                     for key in self.peers:
@@ -360,7 +364,7 @@ class Client:
             # TODO: group related operations
             elif val == 'g':
                 val = input("group id")
-            
+
             # TODO: 存文件里？
             elif val == 'fail':
                 val = input("2 link ids:")
@@ -369,7 +373,7 @@ class Client:
                 if val_1 >= 0 and val_1 < CLIENTNUM and val_2 >= 0 and val_2 < CLIENTNUM:
                     clientGraph[val_2][val_1] = 0
                     clientGraph[val_1][val_2] = 0
-            
+
             # TODO:
             elif val == 'fix':
                 val = input("2 link ids:")
@@ -378,9 +382,6 @@ class Client:
                 if val_1 >= 0 and val_1 < CLIENTNUM and val_2 >= 0 and val_2 < CLIENTNUM:
                     clientGraph[val_2][val_1] = 1
                     clientGraph[val_1][val_2] = 1
-
-                
-
 
     def run(self):
         # threading.Thread(target=monitor).start()
