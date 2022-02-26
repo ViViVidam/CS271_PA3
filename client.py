@@ -60,8 +60,6 @@ class Client:
             self.lastLogTerm = 0
 
         self.curTerm = self.lastLogTerm
-        # self.prevLogIndex = 0
-        # self.prevLogTerm = 0
         self.state = 1  # Follower
         self.electionTimeout = random.randint(10, 20)
         self.curLeader = -1
@@ -83,9 +81,6 @@ class Client:
         #  4: {'next index': 1, 'match index': 0, 'vote granted': False}}
         self.peers = {}
 
-        # self.receiverGroup = [0, 1, 2, 3, 4]
-        # self.receiverGroup.remove(self.id)
-        # self.votesReceived = []
         print("***TERM {}***".format(self.curTerm))
 
     def readJson(self):
@@ -103,9 +98,9 @@ class Client:
     def broadcast(self, data):
         threads = []
         with open("networkConfig.txt", "r") as fo:
-            str = fo.read()
+            network = fo.read()
         for receiverId in range(CLIENTNUM):
-            if str[self.id*5+receiverId] == '1':
+            if network[self.id*5+receiverId] == '1':
                 threads.append(threading.Thread(
                     target=self.socket.sendMessage, args=(data, clientIPs[receiverId])))
         for thread in threads:
@@ -155,9 +150,6 @@ class Client:
             # Send initial empty AppendEntries RPCs (heartbeat) to each
             # follower; repeat during idle periods to prevent election timeouts
             if self.state == 3:
-                # if not self.messageSent:
-                #     self.appendEntries("")
-                # self.messageSent = False
                 self.heartbeat()
                 time.sleep(self.heartbeatTimeout)
                 print("****peers status:")
@@ -166,17 +158,17 @@ class Client:
             print("***log:")
             print(self.log)
 
-    # TODO: 感觉reset之后要打断time thread重新开始？找不到restart thread的办法
+    # TODO: 感觉reset之后要打断timeout thread重新开始？找不到restart thread的办法
     def resetTimeout(self):
         self.electionTimeout = random.randint(10, 20)
 
     def heartbeat(self):
         threads = []
         with open("networkConfig.txt", "r") as fo:
-            str = fo.read()
+            network = fo.read()
         for i in range(CLIENTNUM):
 
-            if str[self.id*5+i] == '1':
+            if network[self.id*5+i] == '1':
 
                 if self.lastLogIndex >= self.peers[i]["next index"]:
                     # heartbeat with message to append
@@ -210,7 +202,6 @@ class Client:
         self.messageSent = False
         for key in self.peers:
             self.peers[key]['next index'] = self.lastLogIndex + 1
-            # self.peers[key]['match index'] = 0
 
     def listen(self):
         while(1):
@@ -256,7 +247,6 @@ class Client:
                 if self.state == 2:
                     if data['data']['voteGranted']:
                         self.peers[data['id']]['vote granted'] = True
-                        # self.votesReceived.append(data['id'])
                         # num of vote granted
                         if sum(x['vote granted'] for x in self.peers.values()) + 1 > CLIENTNUM/2:
                             self.state = 3  # leader
@@ -314,9 +304,9 @@ class Client:
                     
                 self.writeJson()
                 with open("networkConfig.txt", "r") as fo:
-                    str = fo.read()
+                    network = fo.read()
 
-                if str[self.id*5+data['id']]=='1':
+                if network[self.id*5+data['id']]=='1':
                     self.socket.sendMessage(payload, clientIPs[data['id']])
 
             if data['op'] == RESPONDAPPEND:
@@ -332,7 +322,6 @@ class Client:
                 elif self.state == 3:
                     # When AppendEntries consistency check fails, decrement nextIndex and try again in next heartbeat:
                     if not data['data']['success']:
-                        # self.nextIndex[data['id']] -= 1
                         self.peers[data['id']]['next index'] -= 1
                     else:
                         self.peers[data['id']]['match index'] = data['data']['match index']
@@ -359,7 +348,7 @@ class Client:
                     self.curLeader = -1
 
                 with open("networkConfig.txt", "r") as fo:
-                    str = fo.read()
+                    network = fo.read()
 
                 if self.state == 3:
                     self.log.append(
@@ -370,12 +359,12 @@ class Client:
                 # resend to leader
                 
                 elif self.curLeader != -1:
-                    if str[self.id*5+self.curLeader]=='1':
+                    if network[self.id*5+self.curLeader]=='1':
                         self.socket.sendMessage(data, clientIPs[self.curLeader])
                 else:
                     # TODO: what if clients does not have leader info (random send currently)
                     for key in self.peers:
-                        if str[self.id*5+key] == 1:
+                        if network[self.id*5+key] == 1:
                             self.socket.sendMessage(data, clientIPs[key])
                             break
 
@@ -398,14 +387,14 @@ class Client:
                     self.writeJson()
                 else:
                     with open("networkConfig.txt", "r") as fo:
-                        str = fo.read()
+                        network = fo.read()
                     if self.curLeader != -1:
-                        if str[self.id*5+self.curLeader]:
+                        if network[self.id*5+self.curLeader]:
                             self.socket.sendMessage(payload, clientIPs[self.curLeader])
                     else:
                         # what if clients does not have leader info, 感觉这样ok
                         for key in self.peers:
-                            if str[self.id*5+key]:
+                            if network[self.id*5+key]:
                                 self.socket.sendMessage(payload, clientIPs[key])
                                 break
             # TODO: group related operations
@@ -418,12 +407,12 @@ class Client:
                 val_2 = int(val.split()[1])
                 if val_1 >= 0 and val_1 < CLIENTNUM and val_2 >= 0 and val_2 < CLIENTNUM and val_1 != val_2:
                     with open("networkConfig.txt", "r") as fo:
-                        str = fo.read()
-                        if str[val_1*5+val_2] == '1':
-                            str = str[0:val_1*5+val_2]+'0'+str[val_1*5+val_2+1:]
-                            str = str[0:val_2*5+val_1]+'0'+str[val_2*5+val_1+1:]
+                        network = fo.read()
+                        if network[val_1*5+val_2] == '1':
+                            network = network[0:val_1*5+val_2]+'0'+network[val_1*5+val_2+1:]
+                            network = network[0:val_2*5+val_1]+'0'+network[val_2*5+val_1+1:]
                             fo.seek(0, 0)
-                            fo.write(str)
+                            fo.write(network)
                     # fo.close()
 
             elif val == 'fix':
@@ -432,13 +421,13 @@ class Client:
                 val_2 = int(val.split()[1])
                 if val_1 >= 0 and val_1 < CLIENTNUM and val_2 >= 0 and val_2 < CLIENTNUM and val_1 != val_2:
                     with open("networkConfig.txt", "r") as fo:
-                        str = fo.read()
-                        if str[val_1*5+val_2] == '0':
+                        network = fo.read()
+                        if network[val_1*5+val_2] == '0':
                             # str = fo.read()
-                            str = str[0:val_1*5+val_2]+'1'+str[val_1*5+val_2+1:]
-                            str = str[0:val_2*5+val_1]+'1'+str[val_2*5+val_1+1:]
+                            network = network[0:val_1*5+val_2]+'1'+network[val_1*5+val_2+1:]
+                            network = network[0:val_2*5+val_1]+'1'+network[val_2*5+val_1+1:]
                             fo.seek(0, 0)
-                            fo.write(str)
+                            fo.write(network)
                    
 
 
