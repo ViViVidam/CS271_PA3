@@ -60,7 +60,7 @@ class Client:
             self.lastLogTerm = 0
 
         self.curTerm = self.lastLogTerm
-        self.state = 1  # Follower
+        self.state = FOLLOWER  # Follower
         self.electionTimeout = random.randint(10, 20)
         self.curLeader = -1
         self.votedFor = -1
@@ -123,7 +123,7 @@ class Client:
                                  'vote granted': False}
 
     def startElection(self):
-        self.state = 2  # candidate
+        self.state = CANDIDATE  # candidate
         self.curTerm += 1
         self.votedFor = self.id
         self.votesReceived = [self.id]
@@ -133,23 +133,23 @@ class Client:
 
     def timeout(self):
         while(1):
-            if self.state == 1:
+            if self.state == FOLLOWER:
                 self.HeardFromLeader = False
                 time.sleep(self.electionTimeout)
-                if self.state == 1 and not self.HeardFromLeader:
+                if self.state == FOLLOWER and not self.HeardFromLeader:
                     self.startElection()
 
-            if self.state == 2:
+            if self.state == CANDIDATE:
                 self.HeardFromLeader = False
                 time.sleep(self.electionTimeout)
                 # Election timeout elapses without election resolution:
                 # increment term, start new election
-                if self.state == 2 and not self.HeardFromLeader:
+                if self.state == CANDIDATE and not self.HeardFromLeader:
                     self.startElection()
 
             # Send initial empty AppendEntries RPCs (heartbeat) to each
             # follower; repeat during idle periods to prevent election timeouts
-            if self.state == 3:
+            if self.state == LEADER:
                 self.heartbeat()
                 time.sleep(self.heartbeatTimeout)
                 print("****peers status:")
@@ -214,7 +214,7 @@ class Client:
                     self.votedFor = -1
                     self.curTerm = data['data']['term']
                     print("***TERM {}***".format(self.curTerm))
-                    self.state = 1  # step down to FOLLOWER
+                    self.state = FOLLOWER  # step down to FOLLOWER
                     self.curLeader = -1
                 if self.curTerm == data['data']['term']:
                     if self.votedFor != -1 or self.lastLogTerm > data['data']['lastLogTerm'] or (self.lastLogTerm == data['data']['lastLogTerm'] and self.lastLogIndex > data['data']['lastLogIndex']):
@@ -240,7 +240,7 @@ class Client:
                 if self.curTerm < data['data']['term']:
                     self.curTerm = data['data']['term']
                     print("***TERM {}***".format(self.curTerm))
-                    self.state = 1  # follower
+                    self.state = FOLLOWER  # follower
                     self.votedFor = -1
                     self.curLeader = -1
 
@@ -249,7 +249,7 @@ class Client:
                         self.peers[data['id']]['vote granted'] = True
                         # num of vote granted
                         if sum(x['vote granted'] for x in self.peers.values()) + 1 > CLIENTNUM/2:
-                            self.state = 3  # leader
+                            self.state = LEADER  # leader
                             self.curLeader = self.id
                             self.initializeLeader()
 
@@ -263,7 +263,7 @@ class Client:
                     if self.curTerm < data['data']['term']:
                         self.curTerm = data['data']['term']
                         print("***TERM {}***".format(self.curTerm))
-                    self.state = 1  # follower
+                    self.state = FOLLOWER  # follower
                     self.curLeader = data['id']
                     self.HeardFromLeader = True
                     self.resetTimeout()
@@ -316,10 +316,10 @@ class Client:
                 if self.curTerm < data['data']['term']:
                     self.curTerm = data['data']['term']
                     print("***TERM {}***".format(self.curTerm))
-                    self.state = 1  # follower
+                    self.state = FOLLOWER  # follower
                     self.votedFor = -1
                     self.curLeader = -1
-                elif self.state == 3:
+                elif self.state == LEADER:
                     # When AppendEntries consistency check fails, decrement nextIndex and try again in next heartbeat:
                     if not data['data']['success']:
                         self.peers[data['id']]['next index'] -= 1
@@ -350,7 +350,7 @@ class Client:
                 with open("networkConfig.txt", "r") as fo:
                     network = fo.read()
 
-                if self.state == 3:
+                if self.state == LEADER:
                     self.log.append(
                         {'term': self.curTerm, 'type': 'message', 'message': data['data']['entry'], 'committed':False})
                     self.lastLogIndex += 1
@@ -380,7 +380,7 @@ class Client:
                 payload = {'id': self.id, 'op': MESSAGE,
                            'data': {'term': self.curTerm, 'entry': val}}
                 
-                if self.state == 3:
+                if self.state == LEADER:
                     self.log.append({'term': self.curTerm, 'type': 'message', 'message': val, 'committed': False})
                     self.lastLogIndex += 1
                     self.lastLogTerm = self.log[-1]['term']
