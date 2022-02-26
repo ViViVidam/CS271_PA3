@@ -69,8 +69,11 @@ class Client:
 
     def broadcast(self, data):
         threads = []
+        fo = open("networkConfig.txt", "r")
+        str = fo.read()
+        fo.close()
         for receiverId in range(CLIENTNUM):
-            if clientGraph[self.id][receiverId]:
+            if str[self.id*5+receiverId] == '1':
                 threads.append(threading.Thread(
                     target=self.socket.sendMessage, args=(data, clientIPs[receiverId])))
         for thread in threads:
@@ -137,8 +140,12 @@ class Client:
 
     def heartbeat(self):
         threads = []
+        fo = open("networkConfig.txt", "r")
+        str = fo.read()
+        fo.close()
         for i in range(CLIENTNUM):
-            if clientGraph[self.id][i]:
+
+            if str[self.id*5+i] == '1':
 
                 if self.lastLogIndex >= self.peers[i]["next index"]:
                     # heartbeat with message to append
@@ -211,13 +218,15 @@ class Client:
                         self.votedFor = data['id']
                         payload = {'id': self.id, 'op': RESPONDELECTION,
                                    'data': {'term': self.curTerm, 'voteGranted': True}}
-                    if clientGraph[self.id][data['id']]:
-                        self.socket.sendMessage(payload, clientIPs[data['id']])
                 else:
                     payload = {'id': self.id, 'op': RESPONDELECTION, 'data': {
                         'term': self.curTerm, 'voteGranted': False}}
-                    if clientGraph[self.id][data['id']]:
-                        self.socket.sendMessage(payload, clientIPs[data['id']])
+
+                fo = open("networkConfig.txt", "r")
+                str = fo.read()
+                fo.close()
+                if str[self.id*5+data['id']]=='1':
+                    self.socket.sendMessage(payload, clientIPs[data['id']])
 
             if data['op'] == RESPONDELECTION:
                 print("{} received RESPONDELECTION from {} with tag {}".format(
@@ -245,9 +254,7 @@ class Client:
                     self.id, data['id'], data['data']))
                 if self.curTerm > data['data']['term']:
                     payload = {'id': self.id, 'op': RESPONDAPPEND,
-                               'data': {'term': self.curTerm, 'success': False}}
-                    if clientGraph[self.id][data['id']]:
-                        self.socket.sendMessage(payload, clientIPs[data['id']])
+                               'data': {'term': self.curTerm, 'match index': 0, 'success': False}}
                 else:
                     if self.curTerm < data['data']['term']:
                         self.curTerm = data['data']['term']
@@ -280,12 +287,19 @@ class Client:
                             self.log.append(data['data']['entry'])
                             self.lastLogIndex = len(self.log)
                             self.lastLogTerm = self.log[-1]['term']
+                        if data['data']['commitIndex'] >= self.lastLogIndex:
+                            self.commitIndex = self.lastLogIndex
+                        else:
+                            self.commitIndex = data['data']['commitIndex']
                         payload = {'id': self.id, 'op': RESPONDAPPEND,
                                    'data': {'term': self.curTerm, 'match index': self.lastLogIndex, 'success': True}}
-                    if clientGraph[self.id][data['id']]:
-                        self.socket.sendMessage(payload, clientIPs[data['id']])
+                    
+                fo = open("networkConfig.txt", "r")
+                str = fo.read()
+                fo.close()
+                if str[self.id*5+data['id']]=='1':
+                    self.socket.sendMessage(payload, clientIPs[data['id']])
 
-            # TODO:
             if data['op'] == RESPONDAPPEND:
                 print("{} received RESPONDAPPEND from {} with tag {}".format(
                     self.id, data['id'], data['data']))
@@ -296,17 +310,20 @@ class Client:
                     self.state = 1  # follower
                     self.votedFor = -1
                     self.curLeader = -1
-                if self.state == 3:
+                elif self.state == 3:
                     # When AppendEntries consistency check fails, decrement nextIndex and try again in next heartbeat:
                     if not data['data']['success']:
                         # self.nextIndex[data['id']] -= 1
                         self.peers[data['id']]['next index'] -= 1
                     else:
-                        self.peers[data['id']
-                                   ]['match index'] = data['data']['match index']
-                        self.peers[data['id']
-                                   ]['next index'] = data['data']['match index'] + 1
-                        # TODO: majority success, then commit 在这里好像没啥影响
+                        self.peers[data['id']]['match index'] = data['data']['match index']
+                        self.peers[data['id']]['next index'] = data['data']['match index'] + 1
+                        # majority success, then commit 在这里好像没啥影响
+                        for i in range(self.lastLogIndex, self.commitIndex, -1):
+                            if sum(x['match index'] >= i for x in self.peers.values()) + 1 > CLIENTNUM/2:
+                                if self.log[i-1]['term'] >= self.curTerm:
+                                    self.commitIndex = i
+                                break
 
             if data['op'] == MESSAGE:
                 print("{} received MESSAGE from {} with tag {}".format(
@@ -319,20 +336,24 @@ class Client:
                     self.votedFor = -1
                     self.curLeader = -1
 
+                fo = open("networkConfig.txt", "r")
+                str = fo.read()
+                fo.close()
+
                 if self.state == 3:
                     self.log.append(
                         {'term': self.curTerm, 'message': data['data']['entry']})
                     self.lastLogIndex += 1
                     self.lastLogTerm = self.log[-1]['term']
                 # resend to leader
+                
                 elif self.curLeader != -1:
-                    if clientGraph[self.id][self.curLeader]:
-                        self.socket.sendMessage(
-                            data, clientIPs[self.curLeader])
+                    if str[self.id*5+self.curLeader]=='1':
+                        self.socket.sendMessage(data, clientIPs[self.curLeader])
                 else:
                     # TODO: what if clients does not have leader info (random send currently)
                     for key in self.peers:
-                        if clientGraph[self.id][key]:
+                        if str[self.id*5+key] == 1:
                             self.socket.sendMessage(data, clientIPs[key])
                             break
 
@@ -347,41 +368,57 @@ class Client:
                 # TODO: encrypt message
                 payload = {'id': self.id, 'op': MESSAGE,
                            'data': {'term': self.curTerm, 'entry': val}}
+                
                 if self.state == 3:
                     self.log.append({'term': self.curTerm, 'message': val})
                     self.lastLogIndex += 1
                     self.lastLogTerm = self.log[-1]['term']
-                elif self.curLeader != -1:
-                    if clientGraph[self.id][self.curLeader]:
-                        self.socket.sendMessage(
-                            payload, clientIPs[self.curLeader])
                 else:
-                    # TODO: what if clients does not have leader info, 感觉这样ok
-                    for key in self.peers:
-                        if clientGraph[self.id][key]:
-                            self.socket.sendMessage(payload, clientIPs[key])
-                            break
+                    fo = open("networkConfig.txt", "r")
+                    str = fo.read()
+                    fo.close()
+                    if self.curLeader != -1:
+                        if str[self.id*5+self.curLeader]:
+                            self.socket.sendMessage(payload, clientIPs[self.curLeader])
+                    else:
+                        # what if clients does not have leader info, 感觉这样ok
+                        for key in self.peers:
+                            if str[self.id*5+key]:
+                                self.socket.sendMessage(payload, clientIPs[key])
+                                break
             # TODO: group related operations
             elif val == 'g':
                 val = input("group id")
 
-            # TODO: 存文件里？
             elif val == 'fail':
                 val = input("2 link ids:")
                 val_1 = int(val.split()[0])
                 val_2 = int(val.split()[1])
-                if val_1 >= 0 and val_1 < CLIENTNUM and val_2 >= 0 and val_2 < CLIENTNUM:
-                    clientGraph[val_2][val_1] = 0
-                    clientGraph[val_1][val_2] = 0
+                if val_1 >= 0 and val_1 < CLIENTNUM and val_2 >= 0 and val_2 < CLIENTNUM and val_1 != val_2:
+                    fo = open("networkConfig.txt", "r+")
+                    str = fo.read()
+                    if str[val_1*5+val_2] == '1':
+                        str = str[0:val_1*5+val_2]+'0'+str[val_1*5+val_2+1:]
+                        str = str[0:val_2*5+val_1]+'0'+str[val_2*5+val_1+1:]
+                        fo.seek(0, 0)
+                        fo.write(str)
+                    fo.close()
 
-            # TODO:
             elif val == 'fix':
                 val = input("2 link ids:")
                 val_1 = int(val.split()[0])
                 val_2 = int(val.split()[1])
-                if val_1 >= 0 and val_1 < CLIENTNUM and val_2 >= 0 and val_2 < CLIENTNUM:
-                    clientGraph[val_2][val_1] = 1
-                    clientGraph[val_1][val_2] = 1
+                if val_1 >= 0 and val_1 < CLIENTNUM and val_2 >= 0 and val_2 < CLIENTNUM and val_1 != val_2:
+                    fo = open("networkConfig.txt", "r+")
+                    str = fo.read()
+                    if str[val_1*5+val_2] == '0':
+                        # str = fo.read()
+                        str = str[0:val_1*5+val_2]+'1'+str[val_1*5+val_2+1:]
+                        str = str[0:val_2*5+val_1]+'1'+str[val_2*5+val_1+1:]
+                        fo.seek(0, 0)
+                        fo.write(str)
+                    fo.close()
+
 
     def run(self):
         # threading.Thread(target=monitor).start()
