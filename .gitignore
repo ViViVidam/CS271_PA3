@@ -1,5 +1,5 @@
 .idea
-# json/*.json
+json/*.json
 # Editors
 .vscode/
 .idea/
