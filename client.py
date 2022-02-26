@@ -43,11 +43,11 @@ class Client:
         self.lock = threading.Lock()
 
         # log structure:
-        # [{'term': 1, 'message': '0000', 'committed': True}, 
-        # {'term': 2, 'message': '111111111', 'committed': True}, 
-        # {'term': 2, 'message': '000000000', 'committed': True}, 
-        # {'term': 4, 'message': '222222222', 'committed': False}, 
-        # {'term': 4, 'message': '33333333333', 'committed': False}]
+        # [{'term': 1, 'type': 'message', 'message': '0000', 'committed': True}, 
+        # {'term': 2, 'type': 'message', 'message': '111111111', 'committed': True}, 
+        # {'term': 2, 'type': 'message', 'message': '000000000', 'committed': True}, 
+        # {'term': 4, 'type': 'message', 'message': '222222222', 'committed': False}, 
+        # {'term': 4, 'type': 'message', 'message': '33333333333', 'committed': False}]
 
         self.log = []
         self.readJson()
@@ -71,7 +71,7 @@ class Client:
             if self.log[i]['committed']:
                 self.commitIndex = i + 1
                 break
-        self.messageSent = False
+        # self.messageSent = False
         self.HeardFromLeader = False
 
         # peers structure:
@@ -199,7 +199,7 @@ class Client:
     def initializeLeader(self):
         # Initialize nextIndex for each to last log index + 1
         self.heartbeatTimeout = random.randint(8, 10)
-        self.messageSent = False
+        # self.messageSent = False
         for key in self.peers:
             self.peers[key]['next index'] = self.lastLogIndex + 1
 
@@ -352,7 +352,7 @@ class Client:
 
                 if self.state == 3:
                     self.log.append(
-                        {'term': self.curTerm, 'message': data['data']['entry'], 'committed':False})
+                        {'term': self.curTerm, 'type': 'message', 'message': data['data']['entry'], 'committed':False})
                     self.lastLogIndex += 1
                     self.lastLogTerm = self.log[-1]['term']
                     self.writeJson()
@@ -381,7 +381,7 @@ class Client:
                            'data': {'term': self.curTerm, 'entry': val}}
                 
                 if self.state == 3:
-                    self.log.append({'term': self.curTerm, 'message': val, 'committed': False})
+                    self.log.append({'term': self.curTerm, 'type': 'message', 'message': val, 'committed': False})
                     self.lastLogIndex += 1
                     self.lastLogTerm = self.log[-1]['term']
                     self.writeJson()
