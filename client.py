@@ -126,7 +126,7 @@ class Client:
         self.state = CANDIDATE  # candidate
         self.curTerm += 1
         self.votedFor = self.id
-        self.votesReceived = [self.id]
+        # self.votesReceived = [self.id]
         self.restPeers()
         self.resetTimeout()
         self.requestVote()
