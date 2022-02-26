@@ -41,6 +41,14 @@ class Client:
         self.mode = mode
         self.persistFile = PersistFile(id)
         self.lock = threading.Lock()
+
+        # log structure:
+        # [{'term': 1, 'message': '0000', 'committed': True}, 
+        # {'term': 2, 'message': '111111111', 'committed': True}, 
+        # {'term': 2, 'message': '000000000', 'committed': True}, 
+        # {'term': 4, 'message': '222222222', 'committed': False}, 
+        # {'term': 4, 'message': '33333333333', 'committed': False}]
+
         self.log = []
         self.readJson()
         
@@ -68,7 +76,7 @@ class Client:
         self.messageSent = False
         self.HeardFromLeader = False
 
-        # peers look like:
+        # peers structure:
         # {0: {'next index': 1, 'match index': 0, 'vote granted': False},
         #  1: {'next index': 1, 'match index': 0, 'vote granted': False},
         #  3: {'next index': 1, 'match index': 0, 'vote granted': False},
