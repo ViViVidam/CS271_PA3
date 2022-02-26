@@ -404,7 +404,7 @@ class Client:
                 val_1 = int(val.split()[0])
                 val_2 = int(val.split()[1])
                 if val_1 >= 0 and val_1 < CLIENTNUM and val_2 >= 0 and val_2 < CLIENTNUM and val_1 != val_2:
-                    with open("networkConfig.txt", "r") as fo:
+                    with open("networkConfig.txt", "r+") as fo:
                         network = fo.read()
                         if network[val_1*5+val_2] == '1':
                             network = network[0:val_1*5+val_2]+'0'+network[val_1*5+val_2+1:]
@@ -418,7 +418,7 @@ class Client:
                 val_1 = int(val.split()[0])
                 val_2 = int(val.split()[1])
                 if val_1 >= 0 and val_1 < CLIENTNUM and val_2 >= 0 and val_2 < CLIENTNUM and val_1 != val_2:
-                    with open("networkConfig.txt", "r") as fo:
+                    with open("networkConfig.txt", "r+") as fo:
                         network = fo.read()
                         if network[val_1*5+val_2] == '0':
                             # str = fo.read()
