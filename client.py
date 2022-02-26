@@ -229,8 +229,8 @@ class Client:
                         'term': self.curTerm, 'voteGranted': False}}
 
                 with open("networkConfig.txt", "r") as fo:
-                    str = fo.read()
-                if str[self.id*5+data['id']]=='1':
+                    network = fo.read()
+                if network[self.id*5+data['id']] == '1':
                     self.socket.sendMessage(payload, clientIPs[data['id']])
 
             if data['op'] == RESPONDELECTION:
@@ -244,7 +244,7 @@ class Client:
                     self.votedFor = -1
                     self.curLeader = -1
 
-                if self.state == 2:
+                if self.state == CANDIDATE:
                     if data['data']['voteGranted']:
                         self.peers[data['id']]['vote granted'] = True
                         # num of vote granted
@@ -303,9 +303,9 @@ class Client:
                                    'data': {'term': self.curTerm, 'match index': self.lastLogIndex, 'success': True}}
                     
                 self.writeJson()
+
                 with open("networkConfig.txt", "r") as fo:
                     network = fo.read()
-
                 if network[self.id*5+data['id']]=='1':
                     self.socket.sendMessage(payload, clientIPs[data['id']])
 
@@ -356,15 +356,14 @@ class Client:
                     self.lastLogIndex += 1
                     self.lastLogTerm = self.log[-1]['term']
                     self.writeJson()
+
                 # resend to leader
-                
-                elif self.curLeader != -1:
-                    if network[self.id*5+self.curLeader]=='1':
-                        self.socket.sendMessage(data, clientIPs[self.curLeader])
+                elif self.curLeader != -1 and network[self.id*5+self.curLeader]=='1':
+                    self.socket.sendMessage(data, clientIPs[self.curLeader])
                 else:
                     # TODO: what if clients does not have leader info (random send currently)
                     for key in self.peers:
-                        if network[self.id*5+key] == 1:
+                        if network[self.id*5+key] == '1':
                             self.socket.sendMessage(data, clientIPs[key])
                             break
 
@@ -388,13 +387,12 @@ class Client:
                 else:
                     with open("networkConfig.txt", "r") as fo:
                         network = fo.read()
-                    if self.curLeader != -1:
-                        if network[self.id*5+self.curLeader]:
-                            self.socket.sendMessage(payload, clientIPs[self.curLeader])
+                    if self.curLeader != -1 and network[self.id*5+self.curLeader] == '1':
+                        self.socket.sendMessage(payload, clientIPs[self.curLeader])
                     else:
                         # what if clients does not have leader info, 感觉这样ok
                         for key in self.peers:
-                            if network[self.id*5+key]:
+                            if network[self.id*5+key] == '1':
                                 self.socket.sendMessage(payload, clientIPs[key])
                                 break
             # TODO: group related operations
