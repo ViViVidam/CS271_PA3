@@ -1,13 +1,18 @@
-from pickle import TRUE
+import os
 import socket
 import json
 import sys
-from zmq import REQ
 from header import *
 import time
 import threading
 import random
-import os
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization
+import hashlib
+
+def argParse(string):
+    return string.split("[ ]*")
+
 
 class UDPSocket:
     buffersize = 1024
@@ -27,28 +32,111 @@ class UDPSocket:
         data = json.loads(data.decode())
         return data, clientIP
 
+class KeyManager:
 
-class PersistFile:
-    def __init__(self, id):
-        self.log = "log" + str(id)
-        self.keyPair = ("public"+str(id), "private"+str(id))
+    def __init__(self,id):
+        self.id = id
+        self.counter = 0
+        self.groupKeyPair = []# [(),()]
+        self.clientKeys = []#(ID,Publickey)
+        self.dirname = "keystorage"+str(id)
+        self.privateKeyName = "private"+str(id)+".pem"
+        self.publicKeyName = "public"+str(id)+".pem"
 
+        if os.path.exists(self.dirname+"/"+self.privateKeyName) == True:
+            priv = open(self.dirname+"/"+self.privateKeyName,"rb")
+            self.privateKey = serialization.load_pem_private_key(priv.read(), password=None)
+            priv.close()
+        else:
+            self.privateKey = rsa.generate_private_key(65547, 1024)
+            pem = self.privateKey.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption()
+            )
+            f = open(self.privateKeyName, "wb")
+            f.write(pem)
+            f.close()
+
+        if os.path.exists(self.dirname+"/"+self.publicKeyName) == True:
+            pub = open(self.dirname+"/"+self.publicKeyName,"rb")
+            self.publicKey = serialization.load_pem_public_key(pub.read())
+            pub.close()
+        else:
+            self.publicKey = self.privateKey.public_key()
+            pem = self.publicKey.public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo)
+            f = open("public"+str(id)+".pem","rb")
+            f.write(pem)
+            f.close()
+        self.readClientKey()
+
+        if(os.path.isdir("keystorage"+str(id))==False):
+            os.makedirs("keystorage"+str(id))
+
+    def getPublicKey(self):
+        return self.publicKey.public_bytes(encoding=serialization.Encoding.PEM,
+                                               format=serialization.PublicFormat.SubjectPublicKeyInfo)
+    def getPrivateKey(self):
+        return self.privateKey.private_bytes(encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption())
+
+    def writeClientKey(self,id):
+        with open(self.dirname+"/"+str(id)+"public"+str(id)+".pem","wb") as f:
+            pem = self.clientKeys[id].public_bytes(encoding=serialization.Encoding.PEM,format=serialization.PublicFormat.SubjectPublicKeyInfo)
+            f.write(pem)
+            #self.clientKeys[id] =
+
+    def readClientKey(self):
+        for i in CLIENTNUM:
+            if os.path.exists(self.dirname + "/" + "public" + str(i) + ".pem") == True:
+                f = open(self.dirname + "/" + "public" + str(i) + ".pem","rb")
+                self.clientKeys.append(serialization.load_pem_public_key(f.read()))
+            else:
+                self.clientKeys.append(None)
+
+    def makeGroupKey(self):
+        private = rsa.generate_private_key(65547,1024)
+        public = private.public_key()
+        id = (self.id,self.counter)
+        self.groupKeyPair.append((id,public,private))
+        return id,private.private_bytes(encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption()),public.public_bytes(encoding=serialization.Encoding.PEM,format=serialization.PublicFormat.SubjectPublicKeyInfo)
+
+    def findGroupKey(self, id):
+        for i in range(len(self.groupKeyPair)):
+            if self.groupKeyPair[i][0] == id:
+                return i
+        return -1
+
+    def addGroupKey(self,id,publicByte,privateByte):
+        public = serialization.load_pem_public_key(publicByte)
+        private = serialization.load_pem_private_key(privateByte, password=None)
+        self.groupKeyPair.append((id,public,private))
+
+    def makeValidation(self,publicKey):
+        return publicKey.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo)
 
 class Client:
     def __init__(self, id, mode):
         self.id = id
         self.socket = UDPSocket(id)
         self.mode = mode
-        self.persistFile = PersistFile(id)
+        self.keyManager = KeyManager(id)
+        self.initKey = False
         self.lock = threading.Lock()
-
         # log structure:
         # [{'term': 1, 'type': 'message', 'message': '0000', 'committed': True}, 
         # {'term': 2, 'type': 'message', 'message': '111111111', 'committed': True}, 
         # {'term': 2, 'type': 'message', 'message': '000000000', 'committed': True}, 
         # {'term': 4, 'type': 'message', 'message': '222222222', 'committed': False}, 
         # {'term': 4, 'type': 'message', 'message': '33333333333', 'committed': False}]
-
+        self.groupCounter = 0
         self.log = []
         self.readJson()
         
@@ -82,7 +170,10 @@ class Client:
         self.peers = {}
 
         print("***TERM {}***".format(self.curTerm))
+    def createGroup:
 
+    def addMember2Group:
+    def kickMember:
     def readJson(self):
         try:
             with open("json/"+str(self.id)+".json", "r") as f:
@@ -136,16 +227,18 @@ class Client:
             if self.state == FOLLOWER:
                 self.HeardFromLeader = False
                 time.sleep(self.electionTimeout)
-                if self.state == FOLLOWER and not self.HeardFromLeader:
-                    self.startElection()
+                with self.lock:
+                    if self.state == FOLLOWER and not self.HeardFromLeader:
+                        self.startElection()
 
             if self.state == CANDIDATE:
                 self.HeardFromLeader = False
                 time.sleep(self.electionTimeout)
                 # Election timeout elapses without election resolution:
                 # increment term, start new election
-                if self.state == CANDIDATE and not self.HeardFromLeader:
-                    self.startElection()
+                with self.lock:
+                    if self.state == CANDIDATE and not self.HeardFromLeader:
+                        self.startElection()
 
             # Send initial empty AppendEntries RPCs (heartbeat) to each
             # follower; repeat during idle periods to prevent election timeouts
@@ -203,6 +296,23 @@ class Client:
         for key in self.peers:
             self.peers[key]['next index'] = self.lastLogIndex + 1
 
+    ### added two functions
+    def SHA256(self,object):
+        strings = json.dumps(object)
+        res = hashlib.sha256(strings)
+        return res.hexdigest()
+    # client standard payload {id,op,entrypt,data{term,type,entry},SHA(data)}
+    def makeMessagePayload(self,encrypt, type, entry, key):
+        data = {'term': self.curTerm, 'type':type,'entry': entry}
+        if key == None:
+            payload = {'id': self.id, 'op': MESSAGE, 'encrypt': encrypt, 'data': data,
+                       'SHA': self.SHA256(data)}
+        else:
+            payload = {'id': self.id,'op': MESSAGE,'encrypt':encrypt,'data': key.encrypt(data),
+                       'SHA':self.SHA256(data)}
+        return payload
+
+
     def listen(self):
         while(1):
             data, sender = self.socket.recvMessage()
@@ -252,8 +362,17 @@ class Client:
                             self.state = LEADER  # leader
                             self.curLeader = self.id
                             self.initializeLeader()
+                            # [{'term': 1, 'type': 'keypublish', 'message': (id,keybits), 'committed': False},
+                            if self.initKey == False:
+                                self.log.append(
+                                    {'term': self.curTerm, 'type': 'keypublish', 'message': (self.id,self.keyManager.getPublicKey()), 'committed': False})
+                                self.lastLogIndex += 1
+                                self.lastLogTerm = self.log[-1]['term']
+                                self.writeJson()
+                                self.initKey = True
 
             if data['op'] == APPEND:
+                flag = 0 # indicate whether could be send a keypublish message
                 print("{} received APPEND from {} with tag {}".format(
                     self.id, data['id'], data['data']))
                 if self.curTerm > data['data']['term']:
@@ -284,6 +403,7 @@ class Client:
                                    'data': {'term': self.curTerm, 'match index': 0, 'success': False}}
                     # else: match at prevLogIndex
                     else:
+                        flag = 1
                         # delete log after prevLogIndex, log at prevLogIndex match, so we do not delete it
                         while len(self.log) > data['data']['prevLogIndex'] and len(self.log) > 0:
                             self.log.pop()
@@ -291,6 +411,7 @@ class Client:
                             self.log.append(data['data']['entry'])
                             self.lastLogIndex = len(self.log)
                             self.lastLogTerm = self.log[-1]['term']
+
                         if data['data']['commitIndex'] >= self.lastLogIndex:
                             for j in range(self.commitIndex+1, self.lastLogIndex+1):
                                 self.log[j-1]['committed'] = True
@@ -308,6 +429,11 @@ class Client:
                     network = fo.read()
                 if network[self.id*5+data['id']]=='1':
                     self.socket.sendMessage(payload, clientIPs[data['id']])
+                if flag == 1 and self.initKey == False:
+                    self.initKey = True
+                    payload = self.makeMessagePayload(0,'keypublish',(self.id,self.keyManager.getPublicKey()),None)
+                    if network[self.id * 5 + data['id']] == '1':
+                        self.socket.sendMessage(payload, clientIPs[data['id']])
 
             if data['op'] == RESPONDAPPEND:
                 print("{} received RESPONDAPPEND from {} with tag {}".format(
@@ -351,8 +477,9 @@ class Client:
                     network = fo.read()
 
                 if self.state == LEADER:
+                    ### leader logs behaviour change to type set data's type
                     self.log.append(
-                        {'term': self.curTerm, 'type': 'message', 'message': data['data']['entry'], 'committed':False})
+                        {'term': self.curTerm, 'type': data['data']['type'], 'message': data['data']['entry'], 'committed':False})
                     self.lastLogIndex += 1
                     self.lastLogTerm = self.log[-1]['term']
                     self.writeJson()
@@ -366,19 +493,30 @@ class Client:
                         if network[self.id*5+key] == '1':
                             self.socket.sendMessage(data, clientIPs[key])
                             break
+            if data['op'] == REQUESTKEY:
+
+    #leader log entry term,type,entryval,commit
 
     def read(self):
         val = 0
         while(1):
-            while (val != 'w' and val != 'fail' and val != 'fix' and val != 'd'):
-                val = input(
-                    "May I help you? (w for writing, fail, fix): \n")
-            if val == 'w':
-                val = input("message:")
-                # TODO: encrypt message
-                payload = {'id': self.id, 'op': MESSAGE,
-                           'data': {'term': self.curTerm, 'entry': val}}
-                
+            val = input("May I help you? (help to see available instructions): \n")
+            args = argParse(val)
+            if args[0] == "help" or args[0] == 'h':
+                print("--------------------------------------")
+                print("writing message: w [message] [groupId]")
+                print("create Group: createGroup （[processId],[counter]) [clientId] [clientId]...")
+                print("add member: add [groupId] [clientId]")
+                print("kick member: kick [groupId] [clientId]")
+                print("print group: printGroup [groupId]")
+                print("fail link: failLink [clientId] [clientId]")
+                print("fix link: fixLink [clientId] [clientId]")
+                print("fail process: ctrl C will be used")
+                print("--------------------------------------")
+            if args[0] == 'w' and len(args) == 3:
+                val = args[1]
+                groupId = int(args[2])
+
                 if self.state == LEADER:
                     self.log.append({'term': self.curTerm, 'type': 'message', 'message': val, 'committed': False})
                     self.lastLogIndex += 1
@@ -387,6 +525,20 @@ class Client:
                 else:
                     with open("networkConfig.txt", "r") as fo:
                         network = fo.read()
+
+                    index = self.keyManager.findGroupKey((self.id, groupId))
+                    if index == -1:
+                        print("I am not in that group",flush=True)
+                        continue
+                    if groupId != 0:
+                        val = self.keyManager.groupKeyPair[index][1].encrypt(val)
+                        validation = self.keyManager.makeValidation(self.keyManager.groupKeyPair[index][1])
+                        validation = self.keyManager.groupKeyPair[index][1].encrypt(validation)
+                        payload = {'id': self.id, 'op': MESSAGE, 'encrypt': 1,
+                                   'data': {'term': self.curTerm, 'entry': val, 'valid': validation}}
+                    else:
+                        payload = {'id': self.id, 'op': MESSAGE, 'encrypt': 0,
+                                   'data': {'term': self.curTerm, 'entry': val}}
                     if self.curLeader != -1 and network[self.id*5+self.curLeader] == '1':
                         self.socket.sendMessage(payload, clientIPs[self.curLeader])
                     else:
@@ -395,9 +547,24 @@ class Client:
                             if network[self.id*5+key] == '1':
                                 self.socket.sendMessage(payload, clientIPs[key])
                                 break
-            # TODO: group related operations
-            elif val == 'g':
-                val = input("group id")
+
+            elif args[0] == "createGroup" and len(args)>2:
+                groupId, private, public = self.keyManager.makeGroupKey()
+                with open("networkConfig.txt", "r+") as fo:
+                    network = fo.read()
+                threads = []
+                for index in range(1,len(args)):
+                    clientId = int(args[index])
+                    if clientId>(CLIENTNUM-1):
+                        print("invalid client index {}".format(clientId),flush=True)
+                        break
+                    threads.append(threading.Thread(target=self.checkPublicKeyandSend,args=(network,clientId,groupId,private,public)))
+
+            elif val == "add":
+
+            elif val == "kick":
+
+            elif val == "printGroup":
 
             elif val == 'fail':
                 val = input("2 link ids:")
@@ -427,7 +594,19 @@ class Client:
                             fo.seek(0, 0)
                             fo.write(network)
                    
-
+    def checkPublicKeyandSend(self,network,id,groupId,private,public):
+        if network[self.id * 5 + id] == '1':
+            with self.lock:
+                if self.keyManager.clientKeys[id] == None:
+                    payload = {'id': self.id, 'op': REQUESTKEY, 'encrypt': 0, 'data': {self.keyManager.getPublicKey()}}
+                    self.broadcast(payload)
+                else:
+                    validation = self.keyManager.makeValidation(self.keyManager.groupKeyPair[id][1])
+                    validation = self.keyManager.groupKeyPair[id][1].encrypt(validation)
+                    payload = {'id': self.id, 'op': CREATEGROUP, 'encrypt': 1,
+                               'data': {'private': self.keyManager.clientKeys[id][1].encrypt(private), 'public': public,
+                                        'groupId': groupId, 'valid': validation}}
+                    self.socket.sendMessage(payload,clientIPs[id])
 
     def run(self):
         # threading.Thread(target=monitor).start()
