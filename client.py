@@ -23,7 +23,7 @@ def argParse(string:str):
 
 
 class UDPSocket:
-    buffersize = 1024
+    buffersize = 30000
 
     def __init__(self, id):
         self.address = clientIPs[id]
@@ -32,12 +32,13 @@ class UDPSocket:
 
     def sendMessage(self, message, ip):
         # time.sleep(1)
-        msgByte = str.encode(json.dumps(message))
+        msgByte = json.dumps(message).encode('latin1')
         self.UDPsocket.sendto(msgByte, ip)
 
     def recvMessage(self):
         data, clientIP = self.UDPsocket.recvfrom(self.buffersize)
-        data = json.loads(data.decode())
+        data = data.decode('latin1')
+        data = json.loads(data)
         return data, clientIP
 
 class KeyManager:
@@ -134,21 +135,25 @@ class KeyManager:
         i = 0
         packet = []
         while i < len(data):
-            packet.append(key.encrypt(data[i:(i + 150)], pads))
+            tmp = key.encrypt(data[i:(i + 150)], pads)
+            tmp = tmp.decode('latin1')
+            print(type(tmp))
+            packet.append(tmp)
             i += 150
         return packet
 
     def decryptAndConnect(self,key, packet: [bytes]):
         decryption = []
         for item in packet:
-            tmp = key.decrypt(item, pads)
+            tmp = item.encode('latin1')
+            tmp = key.decrypt(tmp, pads)
             decryption.append(tmp)
         return b"".join(decryption)
 
 class Group:
     def __init__(self):
-        self.groupId = [(int,int)]
-        self.groupmember = [list]
+        self.groupId = []
+        self.groupmember = []
     def isInGroup(self,id:(int,int)):
         if id in self.groupId:
             return True
@@ -309,7 +314,8 @@ class Client:
                 print(self.peers)
 
             print("***log:")
-            print(self.log)
+            for log in self.log:
+                print("{} {} {}".format(log['term'],log['type'],log['committed']),flush=True)
 
     # TODO: 感觉reset之后要打断timeout thread重新开始？找不到restart thread的办法
     def resetTimeout(self):
@@ -369,49 +375,49 @@ class Client:
 
     def doLog(self,index:int):
         assert(self.log[index]['committed'])
+        groupId = tuple(self.log[index]["groupId"])
         if self.log[index]['type'] == 'message':
-            groupId = self.log[index]["groupId"]
             if groupId[1] != 0:
                 if self.group.isInGroup(groupId)==True:
                     i = self.keyManager.findGroupKey(groupId)
                     message = self.keyManager.decryptAndConnect(self.keyManager.groupKeyPair[i][2],self.log[index]['message'])
-                    message = message.decode('utf-8')
                     print("message {} recieved".format(message,flush=True))
             else:
                 print("message {} recieved".format(self.log[index]['message']))
         elif self.log[index]['type'] == 'create':
             members = self.log[index]['members']
-            if self.group.isInGroup(self.log[index]['groupId']) is False and self.id in members:
+            print("members {}".format(members),flush=True)
+            if self.group.isInGroup(groupId) is False and self.id in members:
                 i = members.index(self.id)
                 privateBytes = self.keyManager.decryptAndConnect(self.keyManager.privateKey,self.log[index]['private'][i])
-                self.keyManager.addGroupKey(self.log[index]['groupId'],self.log[index]['public'],privateBytes)
-                self.group.putGroup(self.log[index]['groupId'],self.log[index]['members'])
+                self.keyManager.addGroupKey(groupId,self.log[index]['public'].encode('latin1'),privateBytes)
+                self.group.putGroup(groupId,self.log[index]['members'])
         elif self.log[index]['type'] == 'add':
             clientId = self.log[index]['clientId']
             if self.id == clientId:
                 privateBytes = self.keyManager.decryptAndConnect(self.keyManager.privateKey,self.log[index]['private'])
-                self.keyManager.addGroupKey(self.log[index]['groupId'], self.log[index]['public'], privateBytes)
+                self.keyManager.addGroupKey(groupId, self.log[index]['public'].encode('latin1'), privateBytes)
                 for j in range(0,index):
-                    if self.log[j]['groupId']==self.log[index]['groupId'] and self.log[j]['type'] == "create" and self.log[j]['committed'] == True:
-                        self.group.putGroup(self.log[j]['groupId'], self.log[j]['members'].append(self.id))
+                    if tuple(self.log[j]['groupId'])==groupId and self.log[j]['type'] == "create" and self.log[j]['committed'] == True:
+                        self.group.putGroup(tuple(self.log[j]['groupId']), self.log[j]['members'].append(self.id))
                         break
             else:
                 if self.group.isInGroup(self.log[index]['groupId']):
                     self.group.insertGroupMember(self.log[index]['groupId'],clientId)
         elif self.log[index]['type'] == "kick":
             clientId = self.log[index]['clientId']
-            if self.id == clientId and self.group.isInGroup(self.log[index]['groupId']):
-                self.group.removeGroup(self.log[index]['groupId'])
-                self.keyManager.removeGroupKey(self.log[index]['groupId'])
+            if self.id == clientId and self.group.isInGroup(groupId):
+                self.group.removeGroup(groupId)
+                self.keyManager.removeGroupKey(groupId)
 
-            elif self.group.isInGroup(self.log[index]['groupId']):
-                members = self.group.getGroupMembers(self.log[index]['groupId'])
+            elif self.group.isInGroup(groupId):
+                members = self.group.getGroupMembers(groupId)
                 if clientId in members:
-                    self.keyManager.removeGroupKey(self.log[index]['groupId'])
-                    self.group.removeGroupMember(self.log[index]['groupId'],clientId)
-                    print("{} remove {} from {}".format(self.id,clientId,self.log[index]['groupId']),flush=True)
+                    self.keyManager.removeGroupKey(groupId)
+                    self.group.removeGroupMember(groupId,clientId)
+                    print("{} remove {} from {}".format(self.id,clientId,groupId),flush=True)
                     privateBytes = self.keyManager.decryptAndConnect(self.keyManager.privateKey,self.log[index]['private'][members.index(self.id)])
-                    self.keyManager.addGroupKey(self.log[index]['groupId'], self.log[index]['public'],
+                    self.keyManager.addGroupKey(groupId, self.log[index]['public'].encode('latin1'),
                                                 privateBytes)
 
     def listen(self):
@@ -467,7 +473,7 @@ class Client:
             if data['op'] == APPEND:
                 flag = 0 # indicate whether could be send a keypublish message
                 print("{} received APPEND from {} with tag {}".format(
-                    self.id, data['id'], data['data']))
+                    self.id, data['id'], data['data']['term']))
                 if self.curTerm > data['data']['term']:
                     payload = {'id': self.id, 'op': RESPONDAPPEND,
                                'data': {'term': self.curTerm, 'match index': 0, 'success': False}}
@@ -549,6 +555,7 @@ class Client:
                                 if self.log[i-1]['term'] >= self.curTerm:
                                     for j in range(self.commitIndex+1, i+1):
                                         self.log[j-1]['committed'] = True
+                                        print("{} set committed to ture".format(self.id))
                                         self.doLog(j-1)
                                     self.commitIndex = i
                                     self.writeJson()
@@ -666,20 +673,19 @@ class Client:
                 if groupId[0] != self.id:
                     print("process id doesn't match",flush=True)
                     continue
-                entryptedPrivate = []
+                encryptedPrivate = []
                 members = []
+                print(args)
                 for i in range(2,len(args)):
                     clientId = int(args[i])
-                    if clientId != self.id:
-                        print(len(private))
-                        self.keyManager.clientKeys[clientId][1].encrypt(private[0:190],pads)
-                        packet = self.keyManager.encryptAndChunk(self.keyManager.clientKeys[clientId][1],private)
-                        entryptedPrivate.append(packet)
-                        members.append(clientId)
+                    self.keyManager.clientKeys[clientId][1].encrypt(private[0:190],pads)
+                    packet = self.keyManager.encryptAndChunk(self.keyManager.clientKeys[clientId][1],private)
+                    encryptedPrivate.append(packet)
+                    members.append(clientId)
 
                 if self.state == LEADER:
                     self.log.append({'term': self.curTerm, 'type': 'create','groupId':groupId,
-                                     'public':public,'private':entryptedPrivate,
+                                     'public':public.decode('latin1'),'private':encryptedPrivate,
                                      'members':members, 'committed': False})
                     self.lastLogIndex += 1
                     self.lastLogTerm = self.log[-1]['term']
@@ -688,7 +694,7 @@ class Client:
                     with open("networkConfig.txt", "r") as fo:
                         network = fo.read()
                     data = {'term':self.curTerm,'type':'create','groupId':groupId,
-                            'public':public,'private':entryptedPrivate,'members':members}
+                            'public':public.decode('latin1'),'private':encryptedPrivate,'members':members}
                     payload = self.makeMessagePayload(True,data)
                     if self.curLeader != -1 and network[self.id * 5 + self.curLeader] == '1':
                         self.socket.sendMessage(payload, clientIPs[self.curLeader])
@@ -711,7 +717,7 @@ class Client:
                 packet = self.keyManager.encryptAndChunk(self.keyManager.clientKeys[clientId][1],self.keyManager.getPrivateGroupKey(index))
                 if self.state == LEADER:
                     self.log.append({'term': self.curTerm, 'type': 'add','groupId':groupId,
-                                     'public':self.keyManager.getPublicGroupKey(index),'private':packet,
+                                     'public':self.keyManager.getPublicGroupKey(index).decode('latin1'),'private':packet,
                                      'member':clientId, 'committed': False})
                     self.lastLogIndex += 1
                     self.lastLogTerm = self.log[-1]['term']
@@ -720,7 +726,7 @@ class Client:
                     with open("networkConfig.txt", "r") as fo:
                         network = fo.read()
                     data = {'term': self.curTerm, 'type': 'add','groupId':groupId,
-                                     'public':self.keyManager.getPublicGroupKey(index),'private':packet,
+                                     'public':self.keyManager.getPublicGroupKey(index).decode('latin1'),'private':packet,
                                      'member':clientId}
                     payload = self.makeMessagePayload(True,data)
                     if self.curLeader != -1 and network[self.id * 5 + self.curLeader] == '1':
@@ -746,7 +752,7 @@ class Client:
                     encryptedKey.append(packet)
                 if self.state == LEADER:
                     self.log.append({'term': self.curTerm, 'type': 'kick', 'groupId': groupId,
-                                     'public': public, 'private': encryptedKey,
+                                     'public': public.decode('latin1'), 'private': encryptedKey,
                                      'member': clientId, 'committed': False})
                     self.lastLogIndex += 1
                     self.lastLogTerm = self.log[-1]['term']
@@ -755,7 +761,7 @@ class Client:
                     with open("networkConfig.txt", "r") as fo:
                         network = fo.read()
                     data = {'term': self.curTerm, 'type': 'kick', 'groupId': groupId,
-                            'public': public, 'private': encryptedKey,
+                            'public': public.decode('latin1'), 'private': encryptedKey,
                                      'member': clientId }
                     payload = self.makeMessagePayload(True, data)
                     if self.curLeader != -1 and network[self.id * 5 + self.curLeader] == '1':
