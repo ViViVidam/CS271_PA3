@@ -23,7 +23,7 @@ def argParse(string:str):
 
 
 class UDPSocket:
-    buffersize = 30000
+    buffersize = 70000
 
     def __init__(self, id):
         self.address = clientIPs[id]
@@ -88,7 +88,7 @@ class KeyManager:
     def makeGroupKey(self,groupId:(int,int)):
         private = rsa.generate_private_key(65537,2048)
         public = private.public_key()
-        if groupId[0] != self.id or groupId[1] == 0:
+        if groupId[1] == 0:
             return None,None
         # we don't append it until it is commited
         # self.groupKeyPair.append((id,public,private))
@@ -135,11 +135,10 @@ class KeyManager:
         i = 0
         packet = []
         while i < len(data):
-            tmp = key.encrypt(data[i:(i + 150)], pads)
+            tmp = key.encrypt(data[i:(i + 90)], pads)
             tmp = tmp.decode('latin1')
-            print(type(tmp))
             packet.append(tmp)
-            i += 150
+            i += 90
         return packet
 
     def decryptAndConnect(self,key, packet: [bytes]):
@@ -154,21 +153,37 @@ class Group:
     def __init__(self):
         self.groupId = []
         self.groupmember = []
+        self.groupMessage = []
     def isInGroup(self,id:(int,int)):
         if id in self.groupId:
             return True
         else:
             return False
-    def putGroup(self,id:(int,int),members:[int]):
+    def putGroup(self,id:(int,int),members:[int],messages=None):
+        print(members)
         if id not in self.groupId:
             self.groupId.append(id)
             self.groupmember.append(members)
+            if messages is None:
+                self.groupMessage.append([])
+            else:
+                self.groupMessage.append(messages)
+        else:
+            print(self.groupId)
     def getGroupMembers(self,id:(int,int)):
         try:
             index = self.groupId.index(id)
             return self.groupmember[index]
         except ValueError:
             return None
+
+    def getGroupMessages(self,id:(int,int)):
+        try:
+            index = self.groupId.index(id)
+            return self.groupMessage[index]
+        except ValueError:
+            return None
+
     def insertGroupMember(self,id:(int,int),member:int):
         try:
             index = self.groupId.index(id)
@@ -190,8 +205,12 @@ class Group:
         except ValueError:
             print("{} not found {}".format(id,self.groupId))
 
-
-
+    def putMessage(self,groupId,message):
+        try:
+            index = self.groupId.index(groupId)
+            self.groupMessage[index].append(message)
+        except ValueError:
+            print("{} not found {}".format(id,self.groupId))
 class Client:
     def __init__(self, id, mode):
         self.id = id
@@ -209,7 +228,9 @@ class Client:
         # {'term': 4, 'type': 'key', 'message': 'A77BA9BFABDF123', 'SHA':....,'committed': False}]
         self.log = []
         self.readJson()
-        
+        for index in range(len(self.log)):
+            if self.log[index]['committed'] is True:
+                self.doLog(index)
         if len(self.log):
             self.lastLogIndex = len(self.log)
             self.lastLogTerm = self.log[-1]['term']
@@ -317,7 +338,6 @@ class Client:
             for log in self.log:
                 print("{} {} {}".format(log['term'],log['type'],log['committed']),flush=True)
 
-    # TODO: 感觉reset之后要打断timeout thread重新开始？找不到restart thread的办法
     def resetTimeout(self):
         self.electionTimeout = random.randint(10, 20)
 
@@ -381,44 +401,46 @@ class Client:
                 if self.group.isInGroup(groupId)==True:
                     i = self.keyManager.findGroupKey(groupId)
                     message = self.keyManager.decryptAndConnect(self.keyManager.groupKeyPair[i][2],self.log[index]['message'])
-                    print("message {} recieved".format(message,flush=True))
-            else:
-                print("message {} recieved".format(self.log[index]['message']))
+                    self.group.putMessage(groupId,message)
         elif self.log[index]['type'] == 'create':
             members = self.log[index]['members']
-            print("members {}".format(members),flush=True)
             if self.group.isInGroup(groupId) is False and self.id in members:
                 i = members.index(self.id)
                 privateBytes = self.keyManager.decryptAndConnect(self.keyManager.privateKey,self.log[index]['private'][i])
                 self.keyManager.addGroupKey(groupId,self.log[index]['public'].encode('latin1'),privateBytes)
                 self.group.putGroup(groupId,self.log[index]['members'])
         elif self.log[index]['type'] == 'add':
-            clientId = self.log[index]['clientId']
+            clientId = self.log[index]['member']
             if self.id == clientId:
                 privateBytes = self.keyManager.decryptAndConnect(self.keyManager.privateKey,self.log[index]['private'])
                 self.keyManager.addGroupKey(groupId, self.log[index]['public'].encode('latin1'), privateBytes)
                 for j in range(0,index):
                     if tuple(self.log[j]['groupId'])==groupId and self.log[j]['type'] == "create" and self.log[j]['committed'] == True:
-                        self.group.putGroup(tuple(self.log[j]['groupId']), self.log[j]['members'].append(self.id))
+                        newMembers = self.log[j]['members'][:]
+                        newMembers.append(self.id)
+                        self.group.putGroup(tuple(self.log[j]['groupId']), newMembers)
                         break
             else:
-                if self.group.isInGroup(self.log[index]['groupId']):
-                    self.group.insertGroupMember(self.log[index]['groupId'],clientId)
+                if self.group.isInGroup(groupId):
+                    self.group.insertGroupMember(groupId,clientId)
         elif self.log[index]['type'] == "kick":
-            clientId = self.log[index]['clientId']
+            clientId = self.log[index]['member']
             if self.id == clientId and self.group.isInGroup(groupId):
                 self.group.removeGroup(groupId)
                 self.keyManager.removeGroupKey(groupId)
 
             elif self.group.isInGroup(groupId):
                 members = self.group.getGroupMembers(groupId)
+                messages = self.group.getGroupMessages(groupId)
                 if clientId in members:
+                    members.remove(clientId)
                     self.keyManager.removeGroupKey(groupId)
-                    self.group.removeGroupMember(groupId,clientId)
+                    self.group.removeGroup(groupId)
                     print("{} remove {} from {}".format(self.id,clientId,groupId),flush=True)
                     privateBytes = self.keyManager.decryptAndConnect(self.keyManager.privateKey,self.log[index]['private'][members.index(self.id)])
                     self.keyManager.addGroupKey(groupId, self.log[index]['public'].encode('latin1'),
                                                 privateBytes)
+                    self.group.putGroup(groupId,members,messages)
 
     def listen(self):
         while(1):
@@ -432,6 +454,7 @@ class Client:
                     self.curTerm = data['data']['term']
                     print("***TERM {}***".format(self.curTerm))
                     self.state = FOLLOWER  # step down to FOLLOWER
+                    self.curLeader = -1
                     self.curLeader = -1
                 if self.curTerm == data['data']['term']:
                     if self.votedFor != -1 or self.lastLogTerm > data['data']['lastLogTerm'] or (self.lastLogTerm == data['data']['lastLogTerm'] and self.lastLogIndex > data['data']['lastLogIndex']):
@@ -673,12 +696,13 @@ class Client:
                 if groupId[0] != self.id:
                     print("process id doesn't match",flush=True)
                     continue
+                if self.group.isInGroup(groupId):
+                    print("group already created {}".format(groupId),flush=True)
                 encryptedPrivate = []
                 members = []
                 print(args)
                 for i in range(2,len(args)):
                     clientId = int(args[i])
-                    self.keyManager.clientKeys[clientId][1].encrypt(private[0:190],pads)
                     packet = self.keyManager.encryptAndChunk(self.keyManager.clientKeys[clientId][1],private)
                     encryptedPrivate.append(packet)
                     members.append(clientId)
@@ -742,8 +766,12 @@ class Client:
                     print("group key does not exist or hasn't been committed", flush=True)
                     continue
                 clientId = int(args[2])
-                private,public = self.keyManager.makeGroupKey(groupId)
+
                 members = self.group.getGroupMembers(groupId)
+                if clientId not in members:
+                    print("client Id: {} not in group {}".format(clientId,members),flush=True)
+                    continue
+                private, public = self.keyManager.makeGroupKey(groupId)
                 members.remove(clientId)
                 #if kick twice, only the first one will be executed
                 encryptedKey = []
@@ -771,10 +799,11 @@ class Client:
                         break
             elif args[0] == "printGroup":
                 groupId = tuple(map(int, args[1][1:-1].split(',')))
-                if groupId == -1:
+                if self.group.isInGroup(groupId) is False:
                     print("group {} doesn't exsist".format(groupId),flush=True)
                     continue
                 print("group {} members {}".format(groupId,self.group.getGroupMembers(groupId)),flush=True)
+                print("messages: {}".format(self.group.getGroupMessages(groupId)),flush=True)
             elif args[0] == 'fail':
                 val_1 = int(args[1])
                 val_2 = int(args[2])
