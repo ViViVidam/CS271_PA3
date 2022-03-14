@@ -33,7 +33,7 @@ class UDPSocket:
         self.buffer = ["","","","",""]
         self.total = [0,0,0,0,0]
     def sendMessage(self, message, ip):
-        # time.sleep(1)
+        time.sleep(1)
         messagestring = json.dumps(message)
         #messageBytes = messagestring.encode('latin1')
         total = int(len(messagestring) / 7000)
@@ -334,9 +334,10 @@ class Client:
         while(1):
             if self.state == FOLLOWER:
                 self.HeardFromLeader = False
+                self.timeoutReseted = False
                 for _ in range(self.electionTimeout):
                     time.sleep(1)
-                    if self.HeardFromLeader:
+                    if self.timeoutReseted:
                         break
                 with self.lock:
                     if self.state == FOLLOWER and not self.HeardFromLeader:
@@ -344,9 +345,10 @@ class Client:
 
             if self.state == CANDIDATE:
                 self.HeardFromLeader = False
+                self.timeoutReseted = False
                 for _ in range(self.electionTimeout):
                     time.sleep(1)
-                    if self.HeardFromLeader:
+                    if self.timeoutReseted:
                         break
                 # Election timeout elapses without election resolution:
                 # increment term, start new election
@@ -367,6 +369,7 @@ class Client:
                 print("{} {} {}".format(log['term'],log['type'],log['committed']),flush=True)
 
     def resetTimeout(self):
+        self.timeoutReseted = True
         self.electionTimeout = random.randint(8, 15)
 
     def heartbeat(self):
@@ -509,6 +512,7 @@ class Client:
                                    'data': {'term': self.curTerm, 'voteGranted': False}}
                     else:
                         self.votedFor = data['id']
+                        self.resetTimeout()
                         payload = {'id': self.id, 'op': RESPONDELECTION,
                                    'data': {'term': self.curTerm, 'voteGranted': True}}
                 else:
