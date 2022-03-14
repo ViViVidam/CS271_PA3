@@ -33,7 +33,7 @@ class UDPSocket:
         self.buffer = ["","","","",""]
         self.total = [0,0,0,0,0]
     def sendMessage(self, message, ip):
-        time.sleep(1)
+        # time.sleep(1)
         messagestring = json.dumps(message)
         #messageBytes = messagestring.encode('latin1')
         total = int(len(messagestring) / 7000)
@@ -324,6 +324,7 @@ class Client:
     def startElection(self):
         self.state = CANDIDATE  # candidate
         self.curTerm += 1
+        print("***TERM {}***".format(self.curTerm))
         self.votedFor = self.id
         # self.votesReceived = [self.id]
         self.restPeers()
@@ -335,19 +336,19 @@ class Client:
             if self.state == FOLLOWER:
                 self.HeardFromLeader = False
                 self.timeoutReseted = False
-                for _ in range(self.electionTimeout):
-                    time.sleep(1)
+                for _ in range(4*self.electionTimeout):
+                    time.sleep(0.25)
                     if self.timeoutReseted:
                         break
                 with self.lock:
                     if self.state == FOLLOWER and not self.HeardFromLeader and not self.timeoutReseted:
                         self.startElection()
 
-            if self.state == CANDIDATE:
+            elif self.state == CANDIDATE:
                 self.HeardFromLeader = False
                 self.timeoutReseted = False
-                for _ in range(self.electionTimeout):
-                    time.sleep(1)
+                for _ in range(4*self.electionTimeout):
+                    time.sleep(0.25)
                     if self.timeoutReseted:
                         break
                 # Election timeout elapses without election resolution:
@@ -358,7 +359,7 @@ class Client:
 
             # Send initial empty AppendEntries RPCs (heartbeat) to each
             # follower; repeat during idle periods to prevent election timeouts
-            if self.state == LEADER:
+            elif self.state == LEADER:
                 self.heartbeat()
                 time.sleep(self.heartbeatTimeout)
                 print("****peers status:")
@@ -408,7 +409,7 @@ class Client:
 
     def initializeLeader(self):
         # Initialize nextIndex for each to last log index + 1
-        self.heartbeatTimeout = 5
+        self.heartbeatTimeout = 4
         # self.messageSent = False
         for key in self.peers:
             self.peers[key]['next index'] = self.lastLogIndex + 1
@@ -522,7 +523,10 @@ class Client:
                 with open("networkConfig.txt", "r") as fo:
                     network = fo.read()
                 if network[self.id*5+data['id']] == '1':
-                    self.socket.sendMessage(payload, clientIPs[data['id']])
+                    thread = threading.Thread(target=self.socket.sendMessage, args=(payload, clientIPs[data['id']]))
+                    thread.start()
+                    thread.join()
+                    #self.socket.sendMessage(payload, clientIPs[data['id']])
 
             if data['op'] == RESPONDELECTION:
                 print("{} received RESPONDELECTION from {} with tag {}".format(
@@ -605,7 +609,10 @@ class Client:
                 with open("networkConfig.txt", "r") as fo:
                     network = fo.read()
                 if network[self.id*5+data['id']]=='1':
-                    self.socket.sendMessage(payload, clientIPs[data['id']])
+                    thread = threading.Thread(target=self.socket.sendMessage, args=(payload, clientIPs[data['id']]))
+                    thread.start()
+                    thread.join()
+                    # self.socket.sendMessage(payload, clientIPs[data['id']])
 
             if data['op'] == RESPONDAPPEND:
                 print("{} received RESPONDAPPEND from {} with tag {}".format(
@@ -728,7 +735,10 @@ class Client:
                     with open("networkConfig.txt", "r") as fo:
                         network = fo.read()
                     if self.curLeader != -1 and network[self.id*5+self.curLeader] == '1':
-                        self.socket.sendMessage(payload, clientIPs[self.curLeader])
+                        thread = threading.Thread(target=self.socket.sendMessage, args=(payload, clientIPs[self.curLeader]))
+                        thread.start()
+                        thread.join()
+                        # self.socket.sendMessage(payload, clientIPs[self.curLeader])
                     else:
                         print("failed\nthe network currently is not available\n",flush=True)
                         break
@@ -775,7 +785,10 @@ class Client:
                             'public':public.decode('latin1'),'private':encryptedPrivate,'members':members}
                     payload = self.makeMessagePayload(True,data)
                     if self.curLeader != -1 and network[self.id * 5 + self.curLeader] == '1':
-                        self.socket.sendMessage(payload, clientIPs[self.curLeader])
+                        thread = threading.Thread(target=self.socket.sendMessage, args=(payload, clientIPs[self.curLeader]))
+                        thread.start()
+                        thread.join()
+                        # self.socket.sendMessage(payload, clientIPs[self.curLeader])
                     else:
                         print("failed\nthe network currently is not available\n",flush=True)
                         break
@@ -808,7 +821,10 @@ class Client:
                                      'member':clientId}
                     payload = self.makeMessagePayload(True,data)
                     if self.curLeader != -1 and network[self.id * 5 + self.curLeader] == '1':
-                        self.socket.sendMessage(payload, clientIPs[self.curLeader])
+                        thread = threading.Thread(target=self.socket.sendMessage, args=(payload, clientIPs[self.curLeader]))
+                        thread.start()
+                        thread.join()
+                        # self.socket.sendMessage(payload, clientIPs[self.curLeader])
                     else:
                         print("failed\nthe network currently is not available",flush=True)
                         break
@@ -846,7 +862,10 @@ class Client:
                                      'member': clientId }
                     payload = self.makeMessagePayload(True, data)
                     if self.curLeader != -1 and network[self.id * 5 + self.curLeader] == '1':
-                        self.socket.sendMessage(payload, clientIPs[self.curLeader])
+                        thread = threading.Thread(target=self.socket.sendMessage, args=(payload, clientIPs[self.curLeader]))
+                        thread.start()
+                        thread.join()
+                        # self.socket.sendMessage(payload, clientIPs[self.curLeader])
                     else:
                         print("failed\nthe network currently is not available", flush=True)
                         break
