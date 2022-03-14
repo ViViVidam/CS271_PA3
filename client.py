@@ -340,7 +340,7 @@ class Client:
                     if self.timeoutReseted:
                         break
                 with self.lock:
-                    if self.state == FOLLOWER and not self.HeardFromLeader:
+                    if self.state == FOLLOWER and not self.HeardFromLeader and not self.timeoutReseted:
                         self.startElection()
 
             if self.state == CANDIDATE:
@@ -353,7 +353,7 @@ class Client:
                 # Election timeout elapses without election resolution:
                 # increment term, start new election
                 with self.lock:
-                    if self.state == CANDIDATE and not self.HeardFromLeader:
+                    if self.state == CANDIDATE and not self.HeardFromLeader and not self.timeoutReseted:
                         self.startElection()
 
             # Send initial empty AppendEntries RPCs (heartbeat) to each
