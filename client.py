@@ -240,6 +240,7 @@ class Client:
         self.keyManager = KeyManager(id)
         self.lock = threading.Lock()
         self.group = Group()
+        self.invalidGroup = Group()
         # log structure:
         # [{'term': 1, 'type': 'message', 'message': '0000', 'committed': True}, 
         # {'term': 2, 'type': 'message', 'message': '111111111', 'committed': True}, 
@@ -434,21 +435,31 @@ class Client:
         elif self.log[index]['type'] == 'add':
             clientId = self.log[index]['member']
             if self.id == clientId:
+                historymessages = None
+                if self.invalidGroup.isInGroup(groupId):
+                    historymessages = self.invalidGroup.getGroupMessages(groupId)
                 privateBytes = self.keyManager.decryptAndConnect(self.keyManager.privateKey,self.log[index]['private'])
                 self.keyManager.addGroupKey(groupId, self.log[index]['public'].encode('latin1'), privateBytes)
                 for j in range(0,index):
-                    if tuple(self.log[j]['groupId'])==groupId and self.log[j]['type'] == "create" and self.log[j]['committed'] == True:
-                        newMembers = self.log[j]['members'][:]
-                        newMembers.append(self.id)
-                        self.group.putGroup(tuple(self.log[j]['groupId']), newMembers)
-                        break
+                    if tuple(self.log[j]['groupId'])==groupId and self.log[j]['committed'] == True:
+                        if self.log[j]['type'] == "create" :
+                            newMembers = self.log[j]['members'][:]
+                            newMembers.append(self.id)
+                        elif self.log[j]['type'] == "kick":
+                            newMembers.remove(self.log[j]['member'])
+                        elif self.log[j]['type'] == "add":
+                            newMembers.append(self.log[j]['member'])
+                self.group.putGroup(tuple(self.log[j]['groupId']), newMembers,historymessages)
             else:
                 if self.group.isInGroup(groupId):
                     self.group.insertGroupMember(groupId,clientId)
         elif self.log[index]['type'] == "kick":
             clientId = self.log[index]['member']
-            print("kick {} {} {}".format(clientId,self.group.isInGroup(groupId),groupId))
             if self.id == clientId and self.group.isInGroup(groupId):
+                if self.invalidGroup.isInGroup(groupId):
+                    self.invalidGroup.removeGroup(groupId)
+                self.invalidGroup.putGroup(groupId,self.group.getGroupMembers(groupId),self.group.getGroupMessages(groupId))
+                print(self.invalidGroup.groupId)
                 self.group.removeGroup(groupId)
                 self.keyManager.removeGroupKey(groupId)
 
@@ -825,11 +836,16 @@ class Client:
             elif args[0] == "printGroup":
                 groupId = tuple(map(int, args[1][1:-1].split(',')))
                 print("group ids are: {}".format(self.group.groupId))
-                if self.group.isInGroup(groupId) is False:
-                    print("group {} doesn't exsist".format(groupId),flush=True)
+                if self.group.isInGroup(groupId) is True:
+                    print("group {} members {}".format(groupId, self.group.getGroupMembers(groupId)), flush=True)
+                    print("messages: {}".format(self.group.getGroupMessages(groupId)), flush=True)
+                elif self.invalidGroup.isInGroup(groupId) is True:
+                    print("group {} members {}".format(groupId, self.invalidGroup.getGroupMembers(groupId)), flush=True)
+                    print("messages: {}".format(self.invalidGroup.getGroupMessages(groupId)), flush=True)
+                else:
+                    print("group {} doesn't exsist".format(groupId), flush=True)
                     continue
-                print("group {} members {}".format(groupId,self.group.getGroupMembers(groupId)),flush=True)
-                print("messages: {}".format(self.group.getGroupMessages(groupId)),flush=True)
+
             elif args[0] == 'fail':
                 val_1 = int(args[1])
                 val_2 = int(args[2])
