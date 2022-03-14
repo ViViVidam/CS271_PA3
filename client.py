@@ -23,23 +23,44 @@ def argParse(string:str):
 
 
 class UDPSocket:
-    buffersize = 70000
+    buffersize = 16384
 
     def __init__(self, id):
         self.address = clientIPs[id]
         self.UDPsocket = socket.socket(socket.AF_INET, type=socket.SOCK_DGRAM)
         self.UDPsocket.bind(self.address)
-
+        self.ips = clientIPs[:]
+        self.buffer = ["","","","",""]
+        self.total = [0,0,0,0,0]
     def sendMessage(self, message, ip):
         # time.sleep(1)
-        msgByte = json.dumps(message).encode('latin1')
-        self.UDPsocket.sendto(msgByte, ip)
+        messagestring = json.dumps(message)
+        #messageBytes = messagestring.encode('latin1')
+        total = int(len(messagestring) / 7000)
+        if len(messagestring) % 7000 != 0:
+            total += 1
+        for current in range(total):
+            segment = messagestring[current*7000:(current+1)*7000]
+            payload = {'total':total,'packetId':current,'segment':segment}
+            msgByte = json.dumps(payload).encode('latin1')
+            self.UDPsocket.sendto(msgByte, ip)
 
     def recvMessage(self):
-        data, clientIP = self.UDPsocket.recvfrom(self.buffersize)
-        data = data.decode('latin1')
-        data = json.loads(data)
-        return data, clientIP
+        while 1:
+            data, clientIP = self.UDPsocket.recvfrom(self.buffersize)
+            data = data.decode('latin1')
+            data = json.loads(data)
+            index = self.ips.index(clientIP)
+            if data['packetId'] == 0:
+                self.buffer[index]=""
+                self.total[index] = data['total']
+
+            self.buffer[index]+=data['segment']
+            if data['packetId'] == data['total'] - 1 :
+                payload = json.loads(self.buffer[index])
+                self.buffer[index] = ""
+                self.total[index] = 0
+                return payload, clientIP
 
 class KeyManager:
 
