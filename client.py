@@ -483,15 +483,15 @@ class Client:
                 messages = self.group.getGroupMessages(groupId)
                 if clientId in members:
                     members.remove(clientId)
-                    print(self.keyManager.groupKeyPair)
-                    self.keyManager.removeGroupKey(groupId)
-                    self.group.removeGroup(groupId)
-                    print("{} remove {} from {}".format(self.id,clientId,groupId),flush=True)
-                    privateBytes = self.keyManager.decryptAndConnect(self.keyManager.privateKey,self.log[index]['private'][members.index(self.id)])
-                    self.keyManager.addGroupKey(groupId, self.log[index]['public'].encode('latin1'),
-                                                privateBytes)
-                    print(self.keyManager.groupKeyPair)
-                    self.group.putGroup(groupId,members,messages)
+                members.sort()
+                self.keyManager.removeGroupKey(groupId)
+                self.group.removeGroup(groupId)
+                print("{} remove {} from {}".format(self.id,clientId,groupId),flush=True)
+                privateBytes = self.keyManager.decryptAndConnect(self.keyManager.privateKey,self.log[index]['private'][members.index(self.id)])
+                self.keyManager.addGroupKey(groupId, self.log[index]['public'].encode('latin1'),
+                                            privateBytes)
+                print(self.keyManager.groupKeyPair)
+                self.group.putGroup(groupId,members,messages)
 
     def listen(self):
         while(1):
@@ -844,9 +844,11 @@ class Client:
                 private, public = self.keyManager.makeGroupKey(groupId)
                 #if kick twice, only the first one will be executed
                 encryptedKey = []
+                members.sort()
                 for member in members:
-                    packet = self.keyManager.encryptAndChunk(self.keyManager.clientKeys[member][1],private)
-                    encryptedKey.append(packet)
+                    if member != clientId:
+                        packet = self.keyManager.encryptAndChunk(self.keyManager.clientKeys[member][1],private)
+                        encryptedKey.append(packet)
                 if self.state == LEADER:
                     self.log.append({'term': self.curTerm, 'type': 'kick', 'groupId': groupId,
                                      'public': public.decode('latin1'), 'private': encryptedKey,
