@@ -242,11 +242,11 @@ class Client:
         self.group = Group()
         self.invalidGroup = Group()
         # log structure:
-        # [{'term': 1, 'type': 'message', 'message': '0000', 'committed': True}, 
-        # {'term': 2, 'type': 'message', 'message': '111111111', 'committed': True}, 
-        # {'term': 2, 'type': 'message', 'message': '000000000', 'committed': True}, 
-        # {'term': 4, 'type': 'message', 'message': '222222222', 'committed': False}, 
-        # {'term': 4, 'type': 'message', 'message': '33333333333', 'committed': False}]
+        # [{'term': 1, 'type': 'message', 'message': '0000', 'sender':1, 'committed': True}, 
+        # {'term': 2, 'type': 'message', 'message': '111111111', 'sender':1, 'committed': True}, 
+        # {'term': 2, 'type': 'message', 'message': '000000000', 'sender':1, 'committed': True}, 
+        # {'term': 4, 'type': 'message', 'message': '222222222', 'sender':1, 'committed': False}, 
+        # {'term': 4, 'type': 'message', 'message': '33333333333', 'sender':1, 'committed': False}]
         # {'term': 4, 'type': 'key', 'message': 'A77BA9BFABDF123', 'SHA':....,'committed': False}]
         self.log = []
         self.readJson()
@@ -262,7 +262,7 @@ class Client:
 
         self.curTerm = self.lastLogTerm
         self.state = FOLLOWER  # Follower
-        self.electionTimeout = random.randint(10, 20)
+        self.electionTimeout = random.randint(8, 15)
         self.curLeader = -1
         self.votedFor = -1
         self.commitIndex = 0
@@ -334,14 +334,20 @@ class Client:
         while(1):
             if self.state == FOLLOWER:
                 self.HeardFromLeader = False
-                time.sleep(self.electionTimeout)
+                for _ in range(self.electionTimeout):
+                    time.sleep(1)
+                    if self.HeardFromLeader:
+                        break
                 with self.lock:
                     if self.state == FOLLOWER and not self.HeardFromLeader:
                         self.startElection()
 
             if self.state == CANDIDATE:
                 self.HeardFromLeader = False
-                time.sleep(self.electionTimeout)
+                for _ in range(self.electionTimeout):
+                    time.sleep(1)
+                    if self.HeardFromLeader:
+                        break
                 # Election timeout elapses without election resolution:
                 # increment term, start new election
                 with self.lock:
@@ -361,7 +367,7 @@ class Client:
                 print("{} {} {}".format(log['term'],log['type'],log['committed']),flush=True)
 
     def resetTimeout(self):
-        self.electionTimeout = random.randint(10, 20)
+        self.electionTimeout = random.randint(8, 15)
 
     def heartbeat(self):
         threads = []
@@ -399,7 +405,7 @@ class Client:
 
     def initializeLeader(self):
         # Initialize nextIndex for each to last log index + 1
-        self.heartbeatTimeout = random.randint(8, 10)
+        self.heartbeatTimeout = 5
         # self.messageSent = False
         for key in self.peers:
             self.peers[key]['next index'] = self.lastLogIndex + 1
@@ -573,6 +579,7 @@ class Client:
 
                         if data['data']['entry'] != "":
                             self.log.append(data['data']['entry'])
+                            self.log[-1]['committed'] = False
                             self.lastLogIndex = len(self.log)
                             self.lastLogTerm = self.log[-1]['term']
 
@@ -653,20 +660,20 @@ class Client:
                     elif data['data']['type'] == 'message':
                         self.log.append(
                             {'term': self.curTerm, 'type': 'message', 'groupId': data['data']['groupId'],
-                             'message': data['data']['message'], 'committed': False})
+                             'message': data['data']['message'], 'sender':data['id'], 'committed': False})
                     self.lastLogIndex += 1
                     self.lastLogTerm = self.log[-1]['term']
                     self.writeJson()
 
-                # resend to leader
-                elif self.curLeader != -1 and network[self.id*5+self.curLeader]=='1':
-                    self.socket.sendMessage(data, clientIPs[self.curLeader])
-                else:
-                    # TODO: what if clients does not have leader info (random send currently)
-                    for key in self.peers:
-                        if network[self.id*5+key] == '1':
-                            self.socket.sendMessage(data, clientIPs[key])
-                            break
+                # # resend to leader
+                # elif self.curLeader != -1 and network[self.id*5+self.curLeader]=='1':
+                #     self.socket.sendMessage(data, clientIPs[self.curLeader])
+                # else:
+                #     # TODO: what if clients does not have leader info (random send currently)
+                #     for key in self.peers:
+                #         if network[self.id*5+key] == '1':
+                #             self.socket.sendMessage(data, clientIPs[key])
+                #             break
 
     #leader log entry term,type,entryval,commit
 
@@ -700,7 +707,7 @@ class Client:
                 packet = self.keyManager.encryptAndChunk(self.keyManager.groupKeyPair[index][1], val)
                 if self.state == LEADER:
                     self.log.append({'term': self.curTerm, 'type': 'message','groupId':groupId,
-                                     'message': packet, 'committed': False})
+                                     'message': packet, 'sender': self.id, 'committed': False})
                     self.lastLogIndex += 1
                     self.lastLogTerm = self.log[-1]['term']
                     self.writeJson()
@@ -719,11 +726,13 @@ class Client:
                     if self.curLeader != -1 and network[self.id*5+self.curLeader] == '1':
                         self.socket.sendMessage(payload, clientIPs[self.curLeader])
                     else:
-                        # what if clients does not have leader info, 感觉这样ok
-                        for key in self.peers:
-                            if network[self.id*5+key] == '1':
-                                self.socket.sendMessage(payload, clientIPs[key])
-                                break
+                        print("failed\nthe network currently is not available\n",flush=True)
+                        break
+                        # # what if clients does not have leader info, 感觉这样ok
+                        # for key in self.peers:
+                        #     if network[self.id*5+key] == '1':
+                        #         self.socket.sendMessage(payload, clientIPs[key])
+                        #         break
 
             elif args[0] == "createGroup" and len(args)>2:
                 groupId = tuple(map(int, args[1][1:-1].split(',')))
