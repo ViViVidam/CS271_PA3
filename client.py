@@ -174,7 +174,7 @@ class Group:
     def __init__(self):
         self.groupId = []
         self.groupmember = []
-        self.groupMessage = []
+        self.groupMessage = [] #(),()
     def isInGroup(self,id:(int,int)):
         for i in range(len(self.groupId)):
             if id == self.groupId[i]:
@@ -226,10 +226,10 @@ class Group:
         except ValueError:
             print("{} not found {}".format(id,self.groupId))
 
-    def putMessage(self,groupId,message):
+    def putMessage(self,groupId,sender,message):
         try:
             index = self.groupId.index(groupId)
-            self.groupMessage[index].append(message)
+            self.groupMessage[index].append((sender,message))
         except ValueError:
             print("{} not found {}".format(id,self.groupId))
 class Client:
@@ -433,7 +433,7 @@ class Client:
                 if self.group.isInGroup(groupId)==True:
                     i = self.keyManager.findGroupKey(groupId)
                     message = self.keyManager.decryptAndConnect(self.keyManager.groupKeyPair[i][2],self.log[index]['message'])
-                    self.group.putMessage(groupId,message)
+                    self.group.putMessage(groupId,self.log[index]['sender'],message.decode('utf-8'))
         elif self.log[index]['type'] == 'create':
             members = self.log[index]['members']
             if self.group.isInGroup(groupId) is False and self.id in members:
