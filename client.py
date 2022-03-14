@@ -440,15 +440,20 @@ class Client:
                     historymessages = self.invalidGroup.getGroupMessages(groupId)
                 privateBytes = self.keyManager.decryptAndConnect(self.keyManager.privateKey,self.log[index]['private'])
                 self.keyManager.addGroupKey(groupId, self.log[index]['public'].encode('latin1'), privateBytes)
+                flag = False #prevent create twice
                 for j in range(0,index):
                     if tuple(self.log[j]['groupId'])==groupId and self.log[j]['committed'] == True:
-                        if self.log[j]['type'] == "create" :
+                        if self.log[j]['type'] == "create" and flag is False:
                             newMembers = self.log[j]['members'][:]
-                            newMembers.append(self.id)
+                            flag = True
                         elif self.log[j]['type'] == "kick":
-                            newMembers.remove(self.log[j]['member'])
+                            if self.log[j]['member'] in newMembers:
+                                newMembers.remove(self.log[j]['member'])
                         elif self.log[j]['type'] == "add":
-                            newMembers.append(self.log[j]['member'])
+                            if self.log[j]['member'] not in newMembers:
+                                newMembers.append(self.log[j]['member'])
+                if self.id not in newMembers:
+                    newMembers.append(self.id)
                 self.group.putGroup(tuple(self.log[j]['groupId']), newMembers,historymessages)
             else:
                 if self.group.isInGroup(groupId):
@@ -459,7 +464,6 @@ class Client:
                 if self.invalidGroup.isInGroup(groupId):
                     self.invalidGroup.removeGroup(groupId)
                 self.invalidGroup.putGroup(groupId,self.group.getGroupMembers(groupId),self.group.getGroupMessages(groupId))
-                print(self.invalidGroup.groupId)
                 self.group.removeGroup(groupId)
                 self.keyManager.removeGroupKey(groupId)
 
