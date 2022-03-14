@@ -163,11 +163,11 @@ class Group:
         print(members)
         if id not in self.groupId:
             self.groupId.append(id)
-            self.groupmember.append(members)
-            if messages is None:
-                self.groupMessage.append([])
-            else:
-                self.groupMessage.append(messages)
+            self.groupmember.append([])
+            self.groupmember[-1] = members[:]
+            self.groupMessage.append([])
+            if messages is not None:
+                self.groupMessage[-1] = messages[:]
         else:
             print(self.groupId)
     def getGroupMembers(self,id:(int,int)):
@@ -397,6 +397,7 @@ class Client:
         assert(self.log[index]['committed'])
         groupId = tuple(self.log[index]["groupId"])
         if self.log[index]['type'] == 'message':
+            print(self.log[index])
             if groupId[1] != 0:
                 if self.group.isInGroup(groupId)==True:
                     i = self.keyManager.findGroupKey(groupId)
@@ -431,6 +432,7 @@ class Client:
 
             elif self.group.isInGroup(groupId):
                 members = self.group.getGroupMembers(groupId)
+                print(self.group.groupMessage)
                 messages = self.group.getGroupMessages(groupId)
                 if clientId in members:
                     members.remove(clientId)
@@ -799,6 +801,7 @@ class Client:
                         break
             elif args[0] == "printGroup":
                 groupId = tuple(map(int, args[1][1:-1].split(',')))
+                print("group ids are: {}".format(self.group.groupId))
                 if self.group.isInGroup(groupId) is False:
                     print("group {} doesn't exsist".format(groupId),flush=True)
                     continue
