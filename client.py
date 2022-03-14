@@ -176,10 +176,10 @@ class Group:
         self.groupmember = []
         self.groupMessage = []
     def isInGroup(self,id:(int,int)):
-        if id in self.groupId:
-            return True
-        else:
-            return False
+        for i in range(len(self.groupId)):
+            if id == self.groupId[i]:
+                return True
+        return False
     def putGroup(self,id:(int,int),members:[int],messages=None):
         print(members)
         if id not in self.groupId:
@@ -447,6 +447,7 @@ class Client:
                     self.group.insertGroupMember(groupId,clientId)
         elif self.log[index]['type'] == "kick":
             clientId = self.log[index]['member']
+            print("kick {} {} {}".format(clientId,self.group.isInGroup(groupId),groupId))
             if self.id == clientId and self.group.isInGroup(groupId):
                 self.group.removeGroup(groupId)
                 self.keyManager.removeGroupKey(groupId)
@@ -457,12 +458,14 @@ class Client:
                 messages = self.group.getGroupMessages(groupId)
                 if clientId in members:
                     members.remove(clientId)
+                    print(self.keyManager.groupKeyPair)
                     self.keyManager.removeGroupKey(groupId)
                     self.group.removeGroup(groupId)
                     print("{} remove {} from {}".format(self.id,clientId,groupId),flush=True)
                     privateBytes = self.keyManager.decryptAndConnect(self.keyManager.privateKey,self.log[index]['private'][members.index(self.id)])
                     self.keyManager.addGroupKey(groupId, self.log[index]['public'].encode('latin1'),
                                                 privateBytes)
+                    print(self.keyManager.groupKeyPair)
                     self.group.putGroup(groupId,members,messages)
 
     def listen(self):
@@ -795,7 +798,6 @@ class Client:
                     print("client Id: {} not in group {}".format(clientId,members),flush=True)
                     continue
                 private, public = self.keyManager.makeGroupKey(groupId)
-                members.remove(clientId)
                 #if kick twice, only the first one will be executed
                 encryptedKey = []
                 for member in members:
