@@ -479,15 +479,17 @@ class Client:
 
             elif self.group.isInGroup(groupId):
                 members = self.group.getGroupMembers(groupId)
+                backup = members[:]
                 print(self.group.groupMessage)
                 messages = self.group.getGroupMessages(groupId)
                 if clientId in members:
                     members.remove(clientId)
-                members.sort()
+                    backup.remove(clientId)
+                backup.sort()
                 self.keyManager.removeGroupKey(groupId)
                 self.group.removeGroup(groupId)
                 print("{} remove {} from {}".format(self.id,clientId,groupId),flush=True)
-                privateBytes = self.keyManager.decryptAndConnect(self.keyManager.privateKey,self.log[index]['private'][members.index(self.id)])
+                privateBytes = self.keyManager.decryptAndConnect(self.keyManager.privateKey,self.log[index]['private'][backup.index(self.id)])
                 self.keyManager.addGroupKey(groupId, self.log[index]['public'].encode('latin1'),
                                             privateBytes)
                 print(self.keyManager.groupKeyPair)
@@ -837,7 +839,7 @@ class Client:
                     continue
                 clientId = int(args[2])
 
-                members = self.group.getGroupMembers(groupId)
+                members = self.group.getGroupMembers(groupId)[:]
                 if clientId not in members:
                     print("client Id: {} not in group {}".format(clientId,members),flush=True)
                     continue
